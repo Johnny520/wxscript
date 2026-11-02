@@ -83,6 +83,8 @@ dependencies {
     implementation(libs.androidx.annotation)
     implementation(libs.androidx.navigationevent)
     implementation(libs.androidx.navigationevent.compose)
+    implementation(libs.androidx.fragment)
+    implementation(libs.androidx.browser)
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
@@ -104,6 +106,7 @@ dependencies {
     implementation(libs.mmkv)
     implementation(libs.okhttp)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.kotlinx.serialization.protobuf)
     implementation(libs.hiddenapibypass)
     implementation(libs.symbols.filled)
     implementation(libs.symbols.outlined)

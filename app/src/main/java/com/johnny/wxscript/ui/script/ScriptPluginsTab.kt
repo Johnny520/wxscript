@@ -47,6 +47,9 @@ import androidx.compose.ui.unit.dp
 import com.johnny.wxscript.BuildConfig
 import com.johnny.wxscript.ui.HostLauncher
 import com.johnny.wxscript.utils.hostProcessName
+import com.johnny.wxscript.features.core.BaseFeature
+import com.johnny.wxscript.features.core.SwitchFeature
+import com.johnny.wxscript.features.core.WxFeatures
 import h.Hchat.hooks.items.script.ScriptPluginManager
 import h.Hchat.hooks.items.script.ScriptPluginRuntime
 import h.Hchat.hooks.items.script.ScriptPluginSettings
@@ -178,6 +181,10 @@ private fun ScriptPluginList() {
                     Text("插件目录")
                 }
             }
+        }
+
+        item {
+            EngineSwitchCard()
         }
 
         if (loading) {
@@ -337,4 +344,42 @@ private fun scriptDirOf(context: Context): String =
 
 private fun toast(context: Context, message: String) {
     runCatching { Toast.makeText(context, message, Toast.LENGTH_SHORT).show() }
+}
+
+
+/**
+ * 内置脚本引擎开关（Java / JS 脚本、脚本 Hook 服务等）。
+ * 这些是 WCX 时代就有的 Feature，开关值持久化在 WePrefs（key 即 @Feature 的 name）。
+ */
+@Composable
+private fun EngineSwitchCard() {
+    val engines = remember {
+        WxFeatures.ALL.filterIsInstance<SwitchFeature>().map { it as BaseFeature }
+    }
+    if (engines.isEmpty()) return
+    Card(colors = CardDefaults.cardColors()) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("内置引擎", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            engines.forEach { feature ->
+                val switch = feature as SwitchFeature
+                var on by remember(feature.name) { mutableStateOf(switch.isEnabled) }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(feature.name, style = MaterialTheme.typography.bodyLarge)
+                        if (feature.description.isNotBlank()) {
+                            Text(
+                                feature.description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    Switch(checked = on, onCheckedChange = { want ->
+                        on = want
+                        switch.isEnabled = want
+                    })
+                }
+            }
+        }
+    }
 }

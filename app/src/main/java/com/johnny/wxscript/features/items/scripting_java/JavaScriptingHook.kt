@@ -42,7 +42,6 @@ import com.johnny.wxscript.features.api.core.WeDatabaseListenerApi
 import com.johnny.wxscript.features.api.core.WeMessageApi
 import com.johnny.wxscript.features.core.ClickableFeature
 import com.johnny.wxscript.features.core.Feature
-import com.johnny.wxscript.features.items.chat.ChatInputBarEnhancements
 import com.johnny.wxscript.ui.content.AlertDialogContent
 import com.johnny.wxscript.ui.content.DefaultColumn
 import com.johnny.wxscript.ui.content.TextButton
@@ -270,7 +269,7 @@ void onMemberChange(String type, String groupWxid, String userWxid, String userN
             JavaEngine.executeAllOnHandleMsg(scripts, msgBean)
         }
 
-        ChatInputBarEnhancements.methodSendMessage.hookBefore {
+        ScriptSendButtonAnchor.methodSendMessage.hookBefore {
             // 取不到 ChatFooter 时旧实现是 `!! as ChatFooter` 直接 NPE —— Xposed hook 里抛异常
             // 会让点击发送失败。这里降级为跳过脚本回调 + 一条 warn，不影响正常发送。
             val chatFooter = runCatching {

@@ -186,6 +186,15 @@ object HchatScriptBootstrap {
                 }
             }
 
+            // 安装 WxScript 侧 Feature（微信 API 服务 + Java/JS 脚本引擎）。
+            // 必须在 DexKitBridge 建好之后、脚本插件加载之前完成：脚本的 WeChatApis 依赖这批服务。
+            runCatching { ScriptFeaturesInstaller.install(dexKitBridge) }
+                .onSuccess { status += " / " + ScriptFeaturesInstaller.status }
+                .onFailure {
+                    status += " / 脚本引擎安装失败：" + (it.message ?: it.javaClass.simpleName)
+                    WeLogger.e(TAG, "ScriptFeaturesInstaller 失败", it)
+                }
+
             // 关键：推进调度器到 BRIDGE 阶段，触发 WechatApiFeature 注册的 warmup 任务
             // （resolveAll + 数据库 API 解析），数据库才会就绪。
             runCatching { DexInstallScheduler.markDexBridgeReady() }
