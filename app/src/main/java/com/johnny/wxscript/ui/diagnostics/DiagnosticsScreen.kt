@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import com.johnny.wxscript.features.hchat.HchatScriptBootstrap
 import com.johnny.wxscript.features.hchat.ScriptFeaturesInstaller
 import com.johnny.wxscript.ui.components.DotState
+import com.johnny.wxscript.ui.market.MarketData
 import com.johnny.wxscript.ui.components.StatusDot
 import com.johnny.wxscript.ui.script.ScriptData
 import com.johnny.wxscript.utils.WeLogger
@@ -63,6 +64,8 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
     var running by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf("") }
     var report by remember { mutableStateOf<String?>(null) }
+    var probing by remember { mutableStateOf(false) }
+    var marketProbe by remember { mutableStateOf<String?>(null) }
 
     val items = remember(tick) { collectDiagnostics(context) }
 
@@ -99,12 +102,34 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
                         enabled = !running,
                         onClick = { plan = REPAIR_PLAN },
                     ) { Text(if (running) "修复中…" else "一键修复") }
+                    OutlinedButton(
+                        enabled = !probing,
+                        onClick = {
+                            probing = true
+                            scope.launch {
+                                val result = withContext(Dispatchers.IO) { MarketData.probeHealth(context) }
+                                marketProbe = result.fold(
+                                    onSuccess = { "市场可用：$it" },
+                                    onFailure = { "市场不可用：" + (it.message ?: it.javaClass.simpleName) },
+                                )
+                                probing = false
+                            }
+                        },
+                    ) { Text(if (probing) "探测中…" else "探测市场") }
                 }
                 if (progress.isNotBlank()) {
                     Text(
                         progress,
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(top = 10.dp),
+                    )
+                }
+                marketProbe?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 6.dp),
                     )
                 }
                 TextButton(onClick = {
@@ -272,10 +297,27 @@ private fun collectDiagnostics(context: android.content.Context): List<DiagItem>
     )
 
     val plugins = runCatching { ScriptData.listPlugins(context) }.getOrDefault(emptyList())
+    val enabledCount = plugins.count { it.enabled }
+    val runningCount = plugins.count { it.running }
     items += DiagItem(
         "本地插件",
-        if (plugins.isEmpty()) DotState.RUNNING else DotState.OK,
-        "共 ${plugins.size} 个（启用 ${plugins.count { it.enabled }}，运行中 ${plugins.count { it.running }}）",
+        when {
+            plugins.isEmpty() -> DotState.IDLE
+            runningCount < enabledCount -> DotState.RUNNING
+            else -> DotState.OK
+        },
+        if (plugins.isEmpty()) {
+            "插件目录下没有插件"
+        } else {
+            "${plugins.size} 个（启用 $enabledCount · 运行中 $runningCount · 市场安装 ${plugins.count { it.fromMarket }}）"
+        },
+    )
+
+    val serverUrl = runCatching { MarketData.serverUrl(context) }.getOrDefault("")
+    items += DiagItem(
+        "市场服务器",
+        DotState.IDLE,
+        serverUrl.ifBlank { "未配置" } + "（点下方「探测市场」检查连通性）",
     )
 
     val digest = runCatching { WeLogger.digest() }.getOrNull()
