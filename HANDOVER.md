@@ -369,3 +369,48 @@ P2 的目标「把 WCX 的脚本运行时迁移进来」在**编译层面完成*
 
 - 先把「脚本」页做成 P3 设计的单列列表 + 搜索 + 右滑操作；当前是 material3 卡片版最小实现
 - 补「导入插件」（zip / 目录）——`ScriptPluginManager.inspectImport` / `applyImport` 已经在，接 UI 即可
+
+---
+
+## 9. 固定签名（2026-11-02 已配置）
+
+WxScript 有一套**长期不变**的签名密钥，后续所有版本都用它签，保证覆盖安装、不需要卸载重装。
+
+| 项 | 值 |
+|---|---|
+| keystore | PKCS12，4096-bit RSA，有效期 36500 天（100 年） |
+| keyAlias | `wxscript` |
+| 证书 DN | `CN=WxScript, OU=Johnny520, O=WxScript, L=CN, ST=CN, C=CN` |
+| **SHA-256 指纹** | `22:0B:62:05:67:1D:BC:DC:81:3F:86:A9:B6:6A:7A:EC:43:E4:80:FC:AA:E5:45:CF:D7:18:20:17:83:00:76:51` |
+| SHA-1 指纹 | `67:0E:83:58:97:63:EF:74:23:BD:D0:D2:CF:04:15:CA:EB:B4:EA:E2` |
+| 仓库 Secrets | `KEYSTORE_BASE64` / `KEY_ALIAS` / `KEY_PASSWORD` / `STORE_PASSWORD` |
+
+- 构建时 `app/build.gradle.kts` 会从 `KEYSTORE_BASE64` 解出临时 jks 再签名；本地开发也可把 jks 放到仓库根 `keystore/wxscript-release.jks`；
+- CI 有一步 `Verify release signature`，用 `apksigner verify --print-certs` 打印证书，指纹对不上就说明签名配错了；
+- **密钥必须备份**：keystore 丢了就再也无法覆盖升级（只能换包名或让用户卸载重装）。
+
+---
+
+## 10. P3 进度（2026-11-02，分支 `p3-ui`）
+
+已完成（按定稿设计）：
+
+| 页面 | 说明 |
+|---|---|
+| 脚本 Tab | **单列列表**（不用卡片）+ 搜索（名称/描述/作者/ID）+ 分段「已启用 / 全部」+ sticky header 按来源分组（本地导入 / 市场安装）+ 每行 图标·名称·副标题·开关 + 左滑露出「编辑/日志/设置/卸载」+ 导入（SAF 选 zip，冲突可覆盖或跳过） |
+| 内置编辑器 | 顶栏 = 文件名 + 未保存圆点 + ▶/■ + 格式化 + 更多（保存/重载/看日志）；底部三档控制台（隐藏/半屏/全屏），日志里「第 N 行 / line N / .java:N:」可点击跳转 |
+| 首页 | 三段就绪度（脚本引擎 → 微信 API → DexKit）+ DexKit 线性进度条/百分比/当前任务（可折叠）+ 运行中脚本（可停止）+ 快捷入口 + 最近 3 条日志 |
+| 全局细横幅 | 引擎未就绪时每个 Tab 顶部一条，点「诊断」直达 |
+| 诊断页 | 重新检测 / 生成报告 / **一键修复（执行前先列出将要做什么）**，逐项 ✅/❌ |
+| 日志页 | 实时控制台（V/D/I/W/E 分级着色 + 关键字过滤 + 暂停 + 清空 + 摘要）+ 崩溃文件（未捕获异常自动落盘 `<moduleData>/crash/*.txt`，可查看/删除） |
+| 市场 Tab | P3 只做服务可用性：显示服务地址 + `/health` 探测（不放假数据） |
+| 我的 | 宿主信息 / 详细日志开关 / 诊断·日志·API 文档入口 / 导出日志摘要 / 关于 |
+
+未做（留给 P4）：
+- 市场：分类 chips、排序、编辑精选、详情页（README/版本历史/兼容性）、已安装/可更新
+- 插件 API 文档的完整版（当前只有速查页，内容严格按代码里真实存在的变量与 info.prop 键写）
+
+新增的坑：
+26. **`Modifier.matchParentSize()` 只能在 BoxScope 里用**；自己写左滑行时注意内容层要盖在操作层之上，否则点不到。
+27. **`WePrefs` 本身就是 SharedPreferences + Editor**：写值用 `WePrefs.default.putBoolean(k, v)`，没有 `putBool`。
+28. `WeLogger` 的日志文件名前缀是硬编码的 `wcx-`，已改成 `wcxscript-`（同时改了清理用的正则，否则旧日志永远清不掉）。
