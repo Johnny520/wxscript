@@ -1,9 +1,7 @@
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
-
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 android {
@@ -18,11 +16,12 @@ android {
         applicationId = "com.johnny.wxscript"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 1
-        versionName = "v1.0.0"
+        versionCode = 2
+        versionName = "v1.1.0"
 
         buildConfigField("String", "TAG", "\"WxScript\"")
         buildConfigField("String", "HOST_PACKAGE", "\"com.tencent.mm\"")
+        buildConfigField("String", "FLAVOR_SLUG", "\"standard\"")
     }
 
     buildFeatures {
@@ -63,18 +62,27 @@ android {
     }
 }
 
-tasks.withType<KotlinCompile> {
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
     compilerOptions {
-        jvmTarget.set(JvmTarget.fromTarget(libs.versions.jdk.get()))
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.fromTarget(libs.versions.jdk.get()))
+        freeCompilerArgs.add("-opt-in=androidx.compose.material3.ExperimentalMaterial3Api")
+        freeCompilerArgs.add("-Xmax-errors=200")
     }
 }
 
 dependencies {
     compileOnly(files("libs/xposed-api-82.jar"))
+    compileOnly(project(":libs:common:stubs"))
+
+    implementation(project(":libs:common:bsh"))
+    implementation(project(":libs:common:reflekt"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.annotation)
+    implementation(libs.androidx.navigationevent)
+    implementation(libs.androidx.navigationevent.compose)
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
@@ -82,4 +90,26 @@ dependencies {
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.material3)
     implementation(libs.compose.material.icons.extended)
+
+    implementation(libs.dexkit)
+    implementation(libs.miuix.ui)
+    implementation(libs.miuix.icons)
+    implementation(libs.miuix.preference)
+    implementation(libs.miuix.blur)
+    implementation(libs.miuix.shader)
+
+    implementation(libs.kavaref.core)
+    implementation(libs.fastjson2)
+    implementation(libs.protobuf.javalite)
+    implementation(libs.flatbuffers)
+    implementation(libs.fastkv)
+    implementation(libs.mmkv)
+    implementation(libs.okhttp)
+    implementation(libs.kotlinx.serialization.json)
+    implementation(libs.hiddenapibypass)
+    implementation(libs.symbols.filled)
+    implementation(libs.symbols.outlined)
+
+    // 内置 Rhino（WCX fork 45f29f6）：JitPack 单点源不可靠，内置保证构建可复现
+    implementation(files("libs/rhino-45f29f6.jar"))
 }
