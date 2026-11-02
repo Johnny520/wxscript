@@ -59,4 +59,7 @@
 -dontwarn top.yukonga.**
 -dontwarn com.alibaba.fastjson2.**
 -dontwarn javax.**
+-dontwarn jdk.dynalink.**
+-dontwarn java.beans.**
+-dontwarn com.highcapable.kavaref.**
 -dontwarn java.lang.invoke.**
