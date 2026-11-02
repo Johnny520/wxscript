@@ -35,6 +35,7 @@ import com.johnny.wxscript.ui.docs.ApiDocsScreen
 import com.johnny.wxscript.ui.home.EngineBanner
 import com.johnny.wxscript.ui.home.HomeTab
 import com.johnny.wxscript.ui.logs.LogsScreen
+import com.johnny.wxscript.ui.market.MarketDetailScreen
 import com.johnny.wxscript.ui.market.MarketTab
 import com.johnny.wxscript.ui.mine.MineTab
 import com.johnny.wxscript.ui.script.PluginEditorScreen
@@ -48,6 +49,7 @@ sealed interface WxRoute {
     data object Diagnostics : WxRoute
     data object Logs : WxRoute
     data object ApiDocs : WxRoute
+    data class MarketDetail(val remotePluginId: String) : WxRoute
 }
 
 /** WxScript 设置主界面：4 个底栏 Tab（首页 / 脚本 / 市场 / 我的），默认落在「脚本」。 */
@@ -103,6 +105,13 @@ private fun WxScriptRoot() {
             ApiDocsScreen(onBack = { route = WxRoute.Root })
             return
         }
+        is WxRoute.MarketDetail -> {
+            MarketDetailScreen(
+                remotePluginId = current.remotePluginId,
+                onBack = { route = WxRoute.Root },
+            )
+            return
+        }
         WxRoute.Root -> Unit
     }
 
@@ -136,7 +145,7 @@ private fun WxScriptRoot() {
                         onLogs = { route = WxRoute.Logs },
                         onDiagnostics = openDiagnostics,
                     )
-                    2 -> MarketTab()
+                    2 -> MarketTab(onOpenDetail = { id -> route = WxRoute.MarketDetail(id) })
                     else -> MineTab(
                         onOpenDiagnostics = openDiagnostics,
                         onOpenLogs = openLogs,
