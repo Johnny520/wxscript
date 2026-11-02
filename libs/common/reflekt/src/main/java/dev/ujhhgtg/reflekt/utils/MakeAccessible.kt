@@ -4,28 +4,14 @@ package dev.ujhhgtg.reflekt.utils
 
 import java.lang.reflect.AccessibleObject
 
+/**
+ * Android 适配版：`AccessibleObject.trySetAccessible()` 是 JDK 9+ 的 API，Android 平台没有，
+ * 这里统一退回到 `isAccessible = true`（被隐藏 API 拦截时静默失败，调用方自行兜底）。
+ */
 fun <T : AccessibleObject> T.makeAccessible(): T {
-    fun doAccessible() {
-        runCatching {
-            @Suppress("DEPRECATION")
-            if (!this.isAccessible) this.isAccessible = true
-        }
-    }
-
-    if (!isTrySetAccessibleSupported) {
-        doAccessible()
-        return this
-    }
-
     runCatching {
-        trySetAccessible()
-    }.onFailure {
-        isTrySetAccessibleSupported = false
-        doAccessible()
+        @Suppress("DEPRECATION")
+        if (!this.isAccessible) this.isAccessible = true
     }
-
     return this
 }
-
-@Volatile
-var isTrySetAccessibleSupported = true
