@@ -1,8 +1,8 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
 }
 
@@ -63,7 +63,7 @@ android {
     }
 }
 
-kotlin {
+tasks.withType<KotlinCompile> {
     compilerOptions {
         jvmTarget.set(JvmTarget.fromTarget(libs.versions.jdk.get()))
     }
