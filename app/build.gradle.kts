@@ -92,11 +92,9 @@ dependencies {
     implementation(libs.compose.material.icons.extended)
 
     implementation(libs.dexkit)
+    // 只用到 miuix 的 theme / basic / window（VoiceForwardMiuixDialog 的 WindowDialog）。
+    // miuix-blur 的 minSdk 是 33，引进来会拖高本项目 minSdk，因此不引。
     implementation(libs.miuix.ui)
-    implementation(libs.miuix.icons)
-    implementation(libs.miuix.preference)
-    implementation(libs.miuix.blur)
-    implementation(libs.miuix.shader)
 
     implementation(libs.kavaref.core)
     implementation(libs.fastjson2)
