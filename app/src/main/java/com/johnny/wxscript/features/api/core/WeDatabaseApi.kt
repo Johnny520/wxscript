@@ -345,7 +345,7 @@ object WeDatabaseApi : ApiFeature(), IResolveDex {
             )
             val target = kernelCls.reflekt().firstMethodOrNull {
                 parameterCount = 0
-                Modifier.isStatic(modifiers)
+                Modifier.isStatic(modifiers ?: 0)
                 returnType = coreStorageCls
             }
             if (target == null) {
