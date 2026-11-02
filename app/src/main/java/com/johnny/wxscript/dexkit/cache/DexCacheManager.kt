@@ -1,0 +1,191 @@
+package com.johnny.wxscript.dexkit.cache
+
+import com.johnny.wxscript.constants.Preferences
+import com.johnny.wxscript.dexkit.abc.IResolveDex
+import com.johnny.wxscript.features.core.BaseFeature
+import com.johnny.wxscript.preferences.WePrefs
+import com.johnny.wxscript.utils.WeLogger
+import com.johnny.wxscript.utils.fs.KnownPaths
+import com.johnny.wxscript.utils.fs.createDirsSafe
+import com.johnny.wxscript.utils.unreachable
+import org.json.JSONObject
+import java.nio.file.Path
+import kotlin.io.path.deleteIfExists
+import kotlin.io.path.div
+import kotlin.io.path.exists
+import kotlin.io.path.listDirectoryEntries
+import kotlin.io.path.readText
+import kotlin.io.path.writeText
+
+/**
+ * Dex 缓存管理器
+ * 负责管理 Dex 查找结果的缓存，支持版本控制和增量更新。
+ *
+ * 缓存的 key → value 由各 [com.johnny.wxscript.dexkit.dsl.BaseDexDelegate] 直接提供
+ */
+object DexCacheManager {
+
+    private const val TAG = "DexCacheManager"
+
+    private const val CACHE_DIR_NAME = "dex_cache"
+    private const val CACHE_FILE_SUFFIX = ".json"
+    private const val KEY_HOST_VERSION = "host_version"
+
+    private val cacheDir: Path by lazy {
+        (KnownPaths.moduleData / CACHE_DIR_NAME).createDirsSafe()
+    }
+
+    fun init(currentVer: String) {
+        val cachedVer = WePrefs.getString(KEY_HOST_VERSION)
+        if (cachedVer != currentVer) {
+            WeLogger.i(TAG, "host version changed: $cachedVer -> $currentVer, resetting all cache")
+            clearAllCache()
+            Preferences.noDexResolve = false
+            WeLogger.i(TAG, "disabling NO_DEX_RESOLVE due to host version change")
+        }
+
+        WePrefs.putString(KEY_HOST_VERSION, currentVer)
+    }
+
+    /**
+     * 检查 Feature 的缓存是否完整有效。
+     *
+     * 有效条件：
+     * 1. 缓存文件存在
+     * 2. methodHash 匹配（检测代码变化）
+     * 3. [item] 的每个委托 key 都有非空值
+     */
+    fun isItemCacheValid(item: IResolveDex): Boolean {
+        if (item !is BaseFeature) unreachable()
+
+        val cacheFile = getCacheFile(item.name)
+        if (!cacheFile.exists()) {
+            WeLogger.d(TAG, "cache not found for ${item.name}")
+            return false
+        }
+
+        return try {
+            val json = JSONObject(cacheFile.readText())
+
+            // hash 缺失（生成器漏注册等）时不判定为失效：降级为仅按 key 完整性校验，
+            // 绝不因 hash 异常抛错崩微信，也不进入修复循环。
+            val currentHash = calculateMethodHash(item)
+            if (currentHash != null) {
+                val cachedHash = json.optString("methodHash", "")
+                if (cachedHash != currentHash) {
+                    WeLogger.d(TAG, "resolveDex of ${item.displayName} changed: cached=$cachedHash, current=$currentHash")
+                    return false
+                }
+            }
+
+            // 每个委托对应一个 key，全部必须存在且非空
+            val missingOrEmpty = item.dexDelegates.filter { delegate ->
+                val v = json.optString(delegate.key, "")
+                v.isEmpty() || v == "null"
+            }
+
+            if (missingOrEmpty.isNotEmpty()) {
+                WeLogger.d(TAG, "cache incomplete for ${item.displayName}, missing keys: ${missingOrEmpty.map { it.key }}")
+                return false
+            }
+
+            true
+        } catch (e: Exception) {
+            WeLogger.e(TAG, "failed to read cache for: ${item.displayName}", e)
+            false
+        }
+    }
+
+    /**
+     * 将 [item] 所有委托的当前描述符持久化到缓存文件。
+     * 数据来自 [IResolveDex.collectDescriptors]。
+     */
+    fun saveItemCache(item: IResolveDex) {
+        if (item !is BaseFeature) {
+            error("item is not BaseFeature")
+        }
+
+        val cacheFile = getCacheFile(item.name)
+        try {
+            val json = JSONObject()
+            // hash 缺失时跳过该字段而不是抛错：委托描述符照常持久化，
+            // 下次启动按 key 完整性校验（见 isItemCacheValid），item 可正常启用。
+            calculateMethodHash(item)?.let { json.put("methodHash", it) }
+            json.put("timestamp", System.currentTimeMillis())
+
+            item.collectDescriptors().forEach { (key, value) ->
+                json.put(key, value)
+            }
+
+            cacheFile.writeText(json.toString(2))
+            WeLogger.d(TAG, "cache saved for: ${item.displayName}")
+        } catch (e: Exception) {
+            WeLogger.e(TAG, "failed to save cache for: ${item.displayName}", e)
+        }
+    }
+
+    /**
+     * 从缓存文件加载原始 Map（不包含元数据 key）。
+     * 由 [IResolveDex.loadFromCache] 消费，后者负责逐委托分发。
+     */
+    fun loadItemCache(item: IResolveDex): Map<String, Any>? {
+        if (item !is BaseFeature) {
+            error("item is not BaseFeature")
+        }
+
+        val cacheFile = getCacheFile(item.name)
+        if (!cacheFile.exists()) return null
+
+        return try {
+            val json = JSONObject(cacheFile.readText())
+            buildMap {
+                for (key in json.keys()) {
+                    if (key !in META_KEYS) put(key, json.get(key))
+                }
+            }
+        } catch (e: Exception) {
+            WeLogger.e(TAG, "failed to load cache for: ${item.displayName}", e)
+            null
+        }
+    }
+
+    fun deleteCache(path: String) {
+        getCacheFile(path).deleteIfExists()
+    }
+
+    fun clearAllCache() {
+        cacheDir.listDirectoryEntries().forEach { path ->
+            path.deleteIfExists()
+        }
+        WeLogger.i(TAG, "all cache cleared")
+    }
+
+    fun getOutdatedItems(items: List<IResolveDex>): List<IResolveDex> =
+        items.filter { !isItemCacheValid(it) }
+
+    // ---------------------------------------------------------------------------
+
+    private val META_KEYS = setOf("methodHash", "timestamp")
+
+    private fun getCacheFile(path: String): Path =
+        cacheDir / (path.replace("/", "_") + CACHE_FILE_SUFFIX)
+
+    /**
+     * 获取 resolveDex 方法编译时生成的哈希，用于检测实现变化。
+     * 返回 null 表示编译期未注册该 item 的 hash（构建期生成器漏注册）：
+     * 调用方必须降级处理（跳过 hash 比对），绝不允许因此抛异常崩微信。
+     */
+    private fun calculateMethodHash(item: IResolveDex): String? {
+        val className = item.javaClass.name
+        val hash = GeneratedMethodHashes.HASHES[className]
+        if (hash.isNullOrBlank()) {
+            WeLogger.e(
+                TAG,
+                "no method hash registered for item $className; " +
+                        "hash-based invalidation disabled for it, falling back to key-completeness check only"
+            )
+            return null
+        }
+        return hash
+    }
+}

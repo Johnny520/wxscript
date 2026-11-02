@@ -307,3 +307,65 @@ WCX 侧要删除/改动的点：
 - **WCX 主模块**：在原窗口继续（四 Tab 主题背景、抢红包、崩溃排查、发版等）
 - **WxScript**：新窗口，按本文档 P2 → P5 推进
 - 两边**不要交叉修改**：WxScript 不动 WCX 仓库；WCX 也不要在没通知的情况下删 `h/Hchat`（等 WxScript 迁移完成再执行 P5）
+
+---
+
+## 8. P2 完成状态（2026-11-02，commit 0bfd4b25，CI run 41389774826 success）
+
+### 8.1 结果
+
+`assembleDebug` + `assembleRelease`（R8）双通过，产物 `wxscript-apk` 32.4 MB。
+P2 的目标「把 WCX 的脚本运行时迁移进来」在**编译层面完成**；运行时行为仍需真机验证（见 8.4）。
+
+### 8.2 实际迁移了什么（分支 `p2-runtime` → 已并入 main）
+
+| 内容 | 数量 | 说明 |
+|---|---|---|
+| `h/Hchat/**` | 161 | 剔除 `ui/miuix/ScriptPluginMiuixPages.kt`（232KB 市场/Agent UI，留 P4） |
+| `me/hd/wauxv/**` + `me/yun/silk/**` | 13 | 脚本 ABI 包名**保持原样**，不能改 |
+| `com.johnny.wxscript.**`（原 `com.Johnny.wcx`） | 132 | utils / dexkit / features.core / features.api / ui.content / ui.utils / loader.utils |
+| `scripting_java`(7) + `scripting_js`(10) | 17 | 取自 WCX dev（最新 8.0.79/8.0.80 适配版） |
+| `libs/common/{bsh,reflekt,stubs}` | 3 个 Gradle 模块 | bsh 的 javacc/jjtree 代码生成已删除（生成物本来就在库里） |
+| `app/libs/rhino-45f29f6.jar` | 1.6MB | 内置，避免 JitPack 单点源 |
+
+新增的装配层（本仓库自己写的）：
+
+- `features/core/Feature.kt` + `features/core/WxFeatures.kt` —— 用**反射读注解**替代 KSP 生成的 `FeaturesProvider`
+- `features/hchat/HchatScriptBootstrap.kt` —— 照抄 WCX：onInit → install → markDexBridgeReady → 看门狗 + 5s 自动初始化
+- `features/hchat/ScriptFeaturesInstaller.kt` —— 精简版 `FeaturesLoader`：DexCacheManager.init → 逐项从缓存恢复/重新扫 dex → startup
+- `features/items/scripting_java/ScriptSendButtonAnchor.kt` —— 单独拎出发送按钮 DexKit 锚点（原挂在 ChatInputBarEnhancements 上）
+- `startup/WxScriptStartup.kt` —— HybridClassLoader 父链改写 + HostInfo + HiddenApiBypass + ActivityProxy/ActivityLauncher + 后台线程引导
+- `entry/XposedEntry.kt` —— hook `Instrumentation.callApplicationOnCreate`
+- `ui/script/ScriptPluginsTab.kt` —— material3 版脚本页：总开关 / 插件列表 / 每项开关 / README / 齿轮 / 删除 / 内置引擎开关
+- `ui/HostLauncher.kt` —— 模块进程里「在微信中打开设置」（走 WeChatSplashActivity 代理）
+
+### 8.3 主动砍掉的东西（不是漏，是决定不做）
+
+- `ui/miuix/ScriptPluginMiuixPages.kt`（市场/Agent/管理器 miuix 页）→ P4 用新 UI 重做
+- `ui/panel/**`、`features/items/chat/panel/**`、`VoicePanel.kt`、`ChatInputBarEnhancements.kt`、`EdgeTtsClient.kt`
+  （语音面板 + FunBox + TTS，共 ~500 个编译错误，与脚本无关；发送按钮锚点已单独抽出）
+- `ui/utils/theme/Theme.kt` 的 400 行调色板常量 → 换成 material3 默认 `lightColorScheme()/darkColorScheme()`
+- KSP（annotation-scanner）、Room、Ktor、libsu、smali/jadx/ARSCLib 等 WCX 专有大依赖，一律没引
+
+### 8.4 已知未验证 / 待办
+
+1. **真机未验证**。P2 验收里「能看到插件列表 / 能加载插件 / 总开关能开」需要装机跑一遍，特别是：
+   - `ActivityProxy` 让模块 Activity 跑在微信进程的机制（微信 8.0.80 是否仍允许未声明组件启动）
+   - 脚本目录已改为 `<externalMediaDir>/WxScript/脚本插件`
+2. `GeneratedMethodHashes` 是空表 → DexKit 缓存只按「委托完整性」判断，代码改动不会自动失效（微信版本变化会清）。
+3. `ScriptSendButtonAnchor` 目前挂在 `WxFeatures.ALL` 里只做解析，不参与开关。
+4. release 未签名（沿用 P1：没配 4 个 secrets）。
+
+### 8.5 迁移中踩到的坑（新增，追加到第 4 节）
+
+20. **reflekt 在 Android 库模块里编译不过**：`AccessibleObject.trySetAccessible()` 是 JDK9 API，Android 没有 → 已改 `isAccessible = true` 兜底。
+21. **miuix-blur 的 minSdk 是 33**，引 `miuix-ui` 时不要连带 blur/shader，否则 manifest merge 直接失败。
+22. **material3 必须锁 `1.5.0-alpha19`**：BOM 自带版本与 expressive API（`ListItemShapes` / `MaterialExpressiveTheme` / `CornerRadius`）不兼容，会报「Cannot access ... it is internal」。
+23. **Git Data API 的 `base_tree` 只会新增不会删除**：本地删掉的文件必须用「全量 tree（不传 base_tree）」推送，否则仓库里残留旧文件，CI 仍按旧文件编译。
+24. 依赖闭包要按**符号级**算：WCX 大量「同包不同文件」的扩展函数/常量（`CornerRadius`、`MkkovPrefsImpl`、`WePacketSigner`、`M3Shape`），只看 import 会漏。
+25. R8 必补 `-dontwarn jdk.dynalink.** java.beans.** com.highcapable.kavaref.**`（rhino / kavaref 的 JDK-only 引用）。
+
+### 8.6 P3 起点建议
+
+- 先把「脚本」页做成 P3 设计的单列列表 + 搜索 + 右滑操作；当前是 material3 卡片版最小实现
+- 补「导入插件」（zip / 目录）——`ScriptPluginManager.inspectImport` / `applyImport` 已经在，接 UI 即可
