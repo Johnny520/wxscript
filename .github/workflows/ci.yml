@@ -28,8 +28,23 @@ jobs:
       - name: Grant execute permission
         run: chmod +x ./gradlew
 
-      - name: Build (debug + release unsigned)
+      # 签名由 Gradle 侧从 KEYSTORE_BASE64 解出临时 jks（见 app/build.gradle.kts），
+      # 这里只需把 secrets 透出成环境变量给 Gradle 用。
+      - name: Build (debug + signed release)
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
         run: ./gradlew assembleDebug assembleRelease --stacktrace
+
+      - name: Verify release signature
+        run: |
+          set -e
+          APK=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
+          echo "checking $APK"
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          "$BT/apksigner" verify --print-certs "$APK" | head -20
 
       - name: Collect APKs
         run: |

@@ -8,6 +8,7 @@ import com.johnny.wxscript.features.hchat.HchatScriptBootstrap
 import com.johnny.wxscript.loader.utils.ActivityLauncher
 import com.johnny.wxscript.loader.utils.ActivityProxy
 import com.johnny.wxscript.loader.utils.HybridClassLoader
+import com.johnny.wxscript.utils.CrashRecorder
 import com.johnny.wxscript.utils.HostInfo
 import com.johnny.wxscript.utils.TargetProcesses
 import com.johnny.wxscript.utils.WeLogger
@@ -41,6 +42,8 @@ object WxScriptStartup {
         try {
             initClassLoaders(application)
             HostInfo.init(application)
+            runCatching { CrashRecorder.install() }
+                .onFailure { WeLogger.e(TAG, "CrashRecorder install failed", it) }
             ensureHiddenApiAccess()
             WeLogger.i(TAG, "WxScript startup in process=${TargetProcesses.currentName}")
 
