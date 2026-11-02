@@ -1,0 +1,464 @@
+package com.johnny.wxscript.features.api.core
+
+import dev.ujhhgtg.reflekt.reflekt
+import dev.ujhhgtg.reflekt.utils.createInstance
+import com.johnny.wxscript.dexkit.abc.IResolveDex
+import com.johnny.wxscript.dexkit.dsl.dexClass
+import com.johnny.wxscript.dexkit.dsl.dexMethod
+import com.johnny.wxscript.features.api.core.WeConversationApi.hideConversation
+import com.johnny.wxscript.features.api.core.WeConversationApi.reloadConversations
+import com.johnny.wxscript.features.core.ApiFeature
+import com.johnny.wxscript.features.core.Feature
+import com.johnny.wxscript.utils.HostInfo
+import com.johnny.wxscript.utils.WeLogger
+import com.johnny.wxscript.utils.android.runOnUiThread
+import com.johnny.wxscript.utils.strings.isGroupChatWxId
+import java.lang.reflect.Modifier
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+
+@Feature(name = "对话服务", categories = ["API"], description = "提供对话管理能力")
+object WeConversationApi : ApiFeature(), IResolveDex {
+
+    private const val TAG = "WeConversationApi"
+
+    internal val classConversationStorage by dexClass {
+        // 两串在这个类里属于**不同方法**（PRAGMA 在构造器、rconversation 在多个查询方法），
+        // 而 DexKit 的类匹配是方法级 AND，两串组合恒不命中（8.0.80 实测 WARN→失败）。
+        // 只保留更独特的 PRAGMA 串，三版本均唯一命中 ConversationStorage：
+        // 8.0.76/8.0.79 → storage.l4、8.0.80 → storage.m4。
+        searchPackages("com.tencent.mm.storage")
+        matcher {
+            usingEqStrings("PRAGMA table_info( rconversation)")
+        }
+    }
+    private val methodUpdateUnreadByTalker by dexMethod {
+        matcher {
+            declaredClass(classConversationStorage.clazz)
+            usingEqStrings("MicroMsg.ConversationStorage", "updateUnreadByTalker %s")
+        }
+    }
+
+    // ConversationStorage.k(String) aka `delChatContact`: deletes the rconversation row through the
+    // cache-aware storage wrapper and notifies list observers, which is the core of WeChat's native
+    // "不显示该聊天" for a normal contact.
+    private val methodDelChatContact by dexMethod {
+        matcher {
+            declaredClass(classConversationStorage.clazz)
+            usingStrings("MicroMsg.ConversationStorage", "delChatContact username:%s  stack:%s")
+            paramCount = 1
+            paramTypes(String::class.java)
+            returnType(Void.TYPE)
+        }
+    }
+
+    private val methodHiddenConvParent by dexMethod {
+        matcher {
+            declaredClass(classConversationStorage.clazz)
+            usingEqStrings("' where 1 != 1 ")
+        }
+    }
+
+    private val methodChatroomStorageGetMemberCount by dexMethod {
+        searchPackages("com.tencent.mm.storage")
+        matcher {
+            usingEqStrings("MicroMsg.ChatroomStorage", "[getMemberCount] cost:%sms")
+        }
+    }
+    private val classChatroomMember by dexClass {
+        searchPackages("com.tencent.mm.storage")
+        matcher {
+            usingEqStrings("MicroMsg.ChatRoomMember", "service is null")
+        }
+    }
+    private val methodSetDnd by dexMethod {
+        matcher {
+            // 8.0.80: w41.e2 里 D0(...,Z) 是 "switch cancel"、s0(...,Z) 是 "switch add"，
+            // 两者共用 "MicroMsg.OpenImOpLogLogic"。只用单串会 Multiple methods found，
+            // 这里用 add 那条日志串锁定「设置免打扰」。
+            usingEqStrings(
+                "MicroMsg.OpenImOpLogLogic",
+                "OpenImOpLogLogic OpenIMModContactMuteOplog username:%s switch add"
+            )
+        }
+    }
+    private val methodSetNoDnd by dexMethod {
+        matcher {
+            usingEqStrings("MicroMsg.OpenImOpLogLogic", "OpenImOpLogLogic OpenIMModContactMuteOplog username:%s switch cancel")
+        }
+    }
+
+    // ConversationStorage.M(String) / isPlacedTop — returns true when the conversation's flag
+    // has the "placed top" high bits set. Anchored by the string it logs on a null/empty talker.
+    private val methodIsPlacedTop by dexMethod(allowFailure = true) {
+        matcher {
+            declaredClass(classConversationStorage.clazz)
+            usingStrings("MicroMsg.ConversationStorage", "isPlacedTop failed")
+            paramCount = 1
+            paramTypes(String::class.java)
+            returnType(Boolean::class.javaPrimitiveType!!)
+        }
+    }
+
+    // ConversationStorage.U(String) / setPlacedTop — sets the high bits in rconversation.flag
+    // that WeChat uses to sort pinned conversations to the top.
+    private val methodSetPlacedTop by dexMethod(allowFailure = true) {
+        matcher {
+            declaredClass(classConversationStorage.clazz)
+            usingStrings("MicroMsg.ConversationStorage", "setPlacedTop conversation failed")
+            paramCount = 1
+            paramTypes(String::class.java)
+            returnType(Boolean::class.javaPrimitiveType!!)
+        }
+    }
+
+    // ConversationStorage.X(String) / unSetPlacedTop — clears the high bits, unpinning the row.
+    private val methodUnSetPlacedTop by dexMethod(allowFailure = true) {
+        matcher {
+            declaredClass(classConversationStorage.clazz)
+            usingStrings("MicroMsg.ConversationStorage", "unSetPlacedTop conversation failed")
+            paramCount = 1
+            paramTypes(String::class.java)
+            returnType(Boolean::class.javaPrimitiveType!!)
+        }
+    }
+
+    // ContactStorageLogic.toModContactOplog(z3) -> the `tn4` modContact proto WeChat sends as
+    // oplog cmd 2 to sync a contact's flags (mute/top/...) to the server. Reusing WeChat's own
+    // builder guarantees the ~80-field proto (including BitMask/BitVal and remark) is byte-perfect.
+    private val methodBuildModContactOplog by dexMethod {
+        matcher {
+            usingEqStrings(
+                "MicroMsg.ContactStorageLogic",
+                "oplog modContact user:%s remark:%s BitVal:%d BitValue2:%s isInConvBox:%s isTop:%s isMute:%s"
+            )
+        }
+    }
+    val methodNotifyConversationChanged by dexMethod(allowFailure = true) {
+        matcher {
+            declaredClass(classConversationStorage.clazz.superclass!!)
+            paramCount = 3
+            paramTypes("int", classConversationStorage.clazz.superclass!!.name, "java.lang.Object")
+            returnType(Void.TYPE)
+        }
+    }
+
+    // ConversationStorage.p(String) -> com.tencent.mm.storage.m3 (the rconversation model for a
+    // talker), or null. Needed to hand the conversation object to the native delete helper below.
+    private val methodGetConversationByTalker by dexMethod(allowFailure = true) {
+        matcher {
+            declaredClass(classConversationStorage.clazz)
+            usingStrings("MicroMsg.ConversationStorage", "get null with username:")
+            paramCount = 1
+            paramTypes(String::class.java)
+        }
+    }
+
+    // com.tencent.mm.ui.conversation.s1#d(context, talker, m3, PBool, ProgressDialog, boolean) =
+    // doDeleteConv: the work WeChat runs AFTER the user taps 删除 in the "删除该聊天" confirm dialog
+    // (both the normal-contact and group confirm handlers call it). Invoking it directly performs a
+    // permanent delete with NO confirmation dialog. Its progress callback null-checks the PBool and
+    // ProgressDialog, so nulls are safe; the trailing boolean starts a tablet/split-screen
+    // EmptyActivity, so we pass false. Anchored by two in-method log strings unique to s1.d.
+    private val methodDoDeleteConversation by dexMethod {
+        searchPackages("com.tencent.mm.ui.conversation")
+        matcher {
+            usingStrings("MicroMsg.ConvDelLogic")
+            paramCount = 6
+        }
+    }
+//    private var ecsGiftMsgService: Any? = null
+
+    val conversationStorage by lazy {
+        WeServiceApi.storageFeatureService.reflekt()
+            .firstMethod {
+                returnType = classConversationStorage.clazz
+            }
+            .invoke()!!
+    }
+
+    val chatroomStorage by lazy {
+        WeServiceApi.chatroomService.reflekt()
+            .firstMethod {
+                returnType = methodChatroomStorageGetMemberCount.method.declaringClass
+            }
+            .invoke()!!
+    }
+
+    // this is NOT group 'member'
+    // this is the group itself
+    fun getGroup(groupId: String): Any {
+        return chatroomStorage.reflekt()
+            .firstMethod {
+                parameters(String::class)
+                returnType = classChatroomMember.clazz
+            }
+            .invoke(groupId)!!
+    }
+
+    fun markAllAsRead() {
+        val cursor = WeDatabaseApi.rawQuery("SELECT username FROM rconversation WHERE unReadCount>0 OR unReadMuteCount>0 OR atCount>0")
+        while (cursor.moveToNext()) {
+            val talker = cursor.getString(0)
+            try {
+                methodUpdateUnreadByTalker.method.invoke(conversationStorage, talker)
+                WeLogger.d(TAG, "marked $talker as read")
+            } catch (ex: Exception) {
+                WeLogger.w(TAG, "exception while updating unread count for $talker", ex)
+            }
+        }
+        cursor.close()
+    }
+
+    fun markAsRead(talker: String) {
+        try {
+            methodUpdateUnreadByTalker.method.invoke(conversationStorage, talker)
+            WeLogger.d(TAG, "marked $talker as read")
+        } catch (ex: Exception) {
+            WeLogger.w(TAG, "exception while updating unread count for $talker", ex)
+        }
+    }
+
+    /**
+     * Remove a conversation from the home-screen list, the way WeChat's native "不显示该聊天" does:
+     * this deletes the `rconversation` row through the host's cache-aware storage wrapper and
+     * notifies the conversation-list observers, so the change is reflected immediately without a
+     * restart. Chat messages are NOT touched.
+     *
+     * The observer notification is dispatched synchronously on the calling thread and mutates the
+     * list adapters, so this MUST be called on the main thread (see [reloadConversations]).
+     *
+     * @return true if the native delete was invoked without throwing.
+     */
+    fun hideConversation(talker: String): Boolean {
+        return try {
+            methodDelChatContact.method.invoke(conversationStorage, talker)
+            true
+        } catch (ex: Exception) {
+            WeLogger.w(TAG, "exception while deleting conversation for $talker", ex)
+            false
+        }
+    }
+
+    /** The rconversation model ([com.tencent.mm.storage.m3]) for [talker], or null if none exists. */
+    fun getConversationByTalker(talker: String): Any? {
+        if (methodGetConversationByTalker.isPlaceholder) return null
+        return try {
+            methodGetConversationByTalker.method.invoke(conversationStorage, talker)
+        } catch (ex: Exception) {
+            WeLogger.w(TAG, "exception while fetching conversation for $talker", ex)
+            null
+        }
+    }
+
+    /**
+     * Permanently delete a conversation the way WeChat's "删除该聊天" menu does AFTER the user
+     * confirms — i.e. delete the conversation AND its chat messages, syncing the removal to the
+     * server. Unlike [hideConversation] (which only hides the row, "不显示该聊天"), this is
+     * irreversible. No confirmation dialog is shown.
+     *
+     * Invokes the host's post-confirm delete worker (s1.d / doDeleteConv). Runs on the main thread
+     * because it notifies the conversation-list observers synchronously (see [reloadConversations]).
+     *
+     * @return true if the native delete was invoked without throwing (false if unavailable on this
+     *   build or the call threw).
+     */
+    fun deleteConversation(talker: String, conversation: Any? = getConversationByTalker(talker)): Boolean {
+        if (methodDoDeleteConversation.isPlaceholder) {
+            WeLogger.w(TAG, "permanent delete unavailable on this build for $talker")
+            return false
+        }
+        return try {
+            // s1.d(context, talker, m3, pBool=null, progressDialog=null, startEmptyActivity=false)
+            methodDoDeleteConversation.method.invoke(
+                null,
+                HostInfo.application,
+                talker,
+                conversation,
+                null,
+                null,
+                false
+            )
+            true
+        } catch (ex: Exception) {
+            WeLogger.w(TAG, "exception while permanently deleting conversation for $talker", ex)
+            false
+        }
+    }
+
+    fun reloadConversations() {
+        // notifyConversationChanged dispatches to WeChat's conversation-list UI observers.
+        // WeChat's MStorage dispatcher (s85.v0.e) iterates and invokes some listeners
+        // synchronously on the calling thread, so calling this off the main thread mutates
+        // list adapters from a background thread and triggers ListView's
+        // "content of the adapter has changed but ListView did not receive a notification"
+        // crash. Callers like AggregateChats' folder-refresh run on a worker thread, so
+        // always marshal the notify onto the main thread.
+        runOnUiThread {
+            try {
+                notifyConversationChanged("", 5)
+            } catch (ex: Exception) {
+                WeLogger.w(TAG, "exception while notifying conversation list reload", ex)
+            }
+        }
+    }
+
+    private fun notifyConversationChanged(talker: String, eventType: Int = 3) {
+        // isPlaceholder 已把「尚未解析」算作不可用；这里再包一层，防 descriptor 解析
+        // 在守卫之后失效（解析未完成/特征漂移）时抛 Method not found 打断调用方。
+        if (methodNotifyConversationChanged.isPlaceholder) return
+        runCatching {
+            methodNotifyConversationChanged.method.invoke(conversationStorage, eventType, conversationStorage, talker)
+        }.onFailure {
+            WeLogger.w(TAG, "notifyConversationChanged 跳过（${it.javaClass.simpleName}）: ${it.message}")
+        }
+    }
+
+    fun setConversationsVisibility(visible: Boolean, talkers: Array<String>) {
+        val operation = if (visible) "" else "hidden_conv_parent"
+        if (methodHiddenConvParent.method.parameterCount == 4) {
+            methodHiddenConvParent.method.invoke(
+                conversationStorage,
+                talkers,
+                operation,
+                true,
+                false
+            )
+        } else {
+            methodHiddenConvParent.method.invoke(
+                conversationStorage,
+                talkers,
+                operation
+            )
+        }
+    }
+
+    fun setAllConversationVisibility(visible: Boolean) {
+        val cursor = WeDatabaseApi.rawQuery("SELECT username FROM rconversation")
+        val talkers = mutableListOf<String>()
+        while (cursor.moveToNext()) {
+            talkers += cursor.getString(0)
+        }
+        cursor.close()
+        setConversationsVisibility(visible, talkers.toTypedArray())
+    }
+
+    /** ContactStorageLogic (`e2`), the class that owns the DND setters and the modContact builder. */
+    private val contactStorageLogic: Class<*> by lazy {
+        runCatching { methodSetDnd.method.declaringClass }.getOrNull() ?: Object::class.java
+    }
+
+    /**
+     * Toggle "消息免打扰" for [convId] and sync it to the server.
+     */
+    fun setDnd(convId: String, dnd: Boolean) {
+        val stub = methodSetDnd.method.parameterTypes[0].createInstance(convId)
+        if (dnd) {
+            methodSetDnd.method.invoke(null, stub, true)
+        } else {
+            methodSetNoDnd.method.invoke(null, stub, true)
+        }
+    }
+
+    /**
+     * Returns true when [talker]'s conversation is pinned (「置顶」) in the homepage list.
+     * Reads from WeChat's ConversationStorage cache — safe to call on the UI thread.
+     */
+    fun isPinned(talker: String): Boolean {
+        if (methodIsPlacedTop.isPlaceholder) return false
+        return try {
+            methodIsPlacedTop.method.invoke(conversationStorage, talker) as? Boolean ?: false
+        } catch (ex: Exception) {
+            WeLogger.w(TAG, "exception while checking isPlacedTop for $talker", ex)
+            false
+        }
+    }
+
+    /**
+     * Pin ([top] = true) or unpin ([top] = false) [talker]'s conversation.
+     * Calls WeChat's native setPlacedTop / unSetPlacedTop which writes the high bits in
+     * rconversation.flag and notifies conversation-list observers.
+     */
+    fun setPinned(talker: String, top: Boolean) {
+        val method = if (top) methodSetPlacedTop else methodUnSetPlacedTop
+        if (method.isPlaceholder) {
+            WeLogger.w(TAG, "setPlacedTop unavailable on this build for $talker")
+            return
+        }
+        try {
+            method.method.invoke(conversationStorage, talker)
+        } catch (ex: Exception) {
+            WeLogger.w(TAG, "exception while setting placedTop=$top for $talker", ex)
+        }
+    }
+
+    /**
+     * Returns true when [talker]'s conversation is muted (「消息免打扰」).
+     *
+     * Mirrors WeChat's per-conversation mute decision (w3.b / c01.e2):
+     * - **Group chats** (`@chatroom`): muted when the ChatRoomNotify flag (z3.T) in the lvbuff
+     *   blob is 0. The flag has no column and must be parsed from the LV-encoded blob.
+     * - **Everyone else**: muted when rcontact.type has bit 512 set.
+     */
+    fun isDnd(talker: String): Boolean {
+        return try {
+            val cursor = WeDatabaseApi.rawQuery(
+                "SELECT type,lvbuff FROM rcontact WHERE username=? LIMIT 1",
+                arrayOf(talker)
+            )
+            cursor.use { c ->
+                if (!c.moveToFirst()) return@use false
+                if (talker.isGroupChatWxId) {
+                    val lvbuff = if (!c.isNull(1)) c.getBlob(1) else null
+                    parseChatRoomNotify(lvbuff) == 0
+                } else {
+                    if (!c.isNull(0)) c.getInt(0) and 512 != 0 else false
+                }
+            }
+        } catch (ex: Exception) {
+            WeLogger.w(TAG, "exception while checking isDnd for $talker", ex)
+            false
+        }
+    }
+
+    /**
+     * Extracts the ChatRoomNotify flag (field z3.T) from an rcontact lvbuff blob. The blob is
+     * WeChat's LV format (com.tencent.mm.sdk.platformtools.e2): a 0x7B header byte, then a fixed
+     * sequence of length-value fields — int, int, str, long, int, str, str, int, int, str, str,
+     * int(T)... Strings are big-endian short-length prefixed. T is the 12th field. Returns the
+     * flag, or null when the blob is missing / malformed (caller treats null as notify-on).
+     */
+    fun parseChatRoomNotify(lvbuff: ByteArray?): Int? {
+        if (lvbuff == null || lvbuff.size < 2 || lvbuff[0].toInt() != 0x7B) return null
+        return runCatching {
+            val buf = ByteBuffer.wrap(lvbuff).order(ByteOrder.BIG_ENDIAN)
+            buf.position(1) // skip 0x7B header
+            fun skipStr() {
+                val len = buf.short.toInt() and 0xFFFF
+                buf.position(buf.position() + len)
+            }
+            buf.int          // H
+            buf.int          // I
+            skipStr()        // J
+            buf.long         // K
+            buf.int          // L
+            skipStr()        // M
+            skipStr()        // N
+            buf.int          // P
+            buf.int          // Q
+            skipStr()        // R
+            skipStr()        // S
+            buf.int          // T (ChatRoomNotify)
+        }.getOrNull()
+    }
+
+    /** Fetch the fully-populated contact ([com.tencent.mm.storage.z3]) for [convId], or null. */
+    private fun fetchContact(convId: String): Any {
+        return contactStorageLogic.reflekt()
+            .firstMethod {
+                modifiers = Modifier.STATIC
+                parameters(String::class.java)
+                returnType(methodSetDnd.method.parameterTypes[0])
+            }.invoke(null, convId)!!
+    }
+}
