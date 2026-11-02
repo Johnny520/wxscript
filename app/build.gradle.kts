@@ -1,3 +1,6 @@
+import java.io.File
+import java.util.Base64
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -34,6 +37,41 @@ android {
         targetCompatibility = JavaVersion.toVersion(libs.versions.jdk.get().toInt())
     }
 
+    // ─── 固定签名 ──────────────────────────────────────────────────────
+    // WxScript 用一个长期不变的密钥签名（生成于 2026-11-02，有效期 100 年），
+    // 保证后续所有版本都能覆盖安装、不会因为签名变化要求卸载重装。
+    // 解析顺序：KEYSTORE_BASE64（CI secrets）→ WXSCRIPT_KEYSTORE_FILE → 仓库根 keystore/
+    val releaseStoreFile: File? = run {
+        val local = rootProject.file("keystore/wxscript-release.jks")
+        val fromEnvPath = System.getenv("WXSCRIPT_KEYSTORE_FILE")?.takeIf { it.isNotBlank() }?.let(::File)
+        val b64 = System.getenv("KEYSTORE_BASE64")
+        when {
+            fromEnvPath != null && fromEnvPath.exists() -> fromEnvPath
+            !b64.isNullOrBlank() -> {
+                val target = layout.buildDirectory.file("keystore/wxscript-release.jks").get().asFile
+                target.parentFile?.mkdirs()
+                target.writeBytes(Base64.getDecoder().decode(b64))
+                target
+            }
+            local.exists() -> local
+            else -> null
+        }
+    }
+
+    signingConfigs {
+        if (releaseStoreFile != null) {
+            create("release") {
+                storeFile = releaseStoreFile
+                storePassword = System.getenv("STORE_PASSWORD") ?: "WxScript-2026-Sign"
+                keyAlias = System.getenv("KEY_ALIAS") ?: "wxscript"
+                keyPassword = System.getenv("KEY_PASSWORD") ?: "WxScript-2026-Sign"
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -42,6 +80,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (releaseStoreFile != null) signingConfig = signingConfigs.getByName("release")
         }
     }
 

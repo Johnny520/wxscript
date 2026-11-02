@@ -79,7 +79,7 @@ object WeLogger {
         }.getOrNull() ?: return null
 
         pruneLogs(logsDir)
-        val logPath = logsDir / "wcx-${dateFmt.format(logDate)}.log"
+        val logPath = logsDir / "wcxscript-${dateFmt.format(logDate)}.log"
         return runCatching {
             BufferedWriter(
                 OutputStreamWriter(
@@ -132,7 +132,7 @@ object WeLogger {
     private fun pruneLogs(logsDir: java.nio.file.Path) {
         runCatching {
             val thresholdDate = LocalDate.now().minusDays(MAX_LOG_AGE_DAYS)
-            val logFileRegex = Regex("""wcx-(\d{4}-\d{2}-\d{2})(?:-\d{13}(?:-\d+)?)?\.log""")
+            val logFileRegex = Regex("""wcxscript-(\d{4}-\d{2}-\d{2})(?:-\d{13}(?:-\d+)?)?\.log""")
             val files = logsDir.toFile().listFiles()
                 ?.filter { it.isFile && logFileRegex.matches(it.name) }
                 ?.toMutableList()
@@ -510,7 +510,7 @@ object WeLogger {
     ) {
         /** 结构化、可分享的精简文本（问题优先，控制每条堆栈行数）。 */
         fun toShareText(): String = buildString {
-            appendLine("【WCX 运行日志摘要】")
+            appendLine("【WxScript 运行日志摘要】")
             appendLine("文件：${fileName ?: "无"}（$fileSizeText）")
             appendLine("记录：$totalRecords 条 ｜ 错误 $errorCount ｜ 警告 $warnCount" +
                 if (droppedCount > 0L) " ｜ 队列丢弃 $droppedCount" else "")
