@@ -1,5 +1,6 @@
 package com.johnny.wxscript.utils
 
+import com.johnny.wxscript.utils.fs.KnownPaths
 import java.io.File
 import java.io.PrintWriter
 import java.io.StringWriter
