@@ -1,21 +1,29 @@
 package com.johnny.wxscript.ui.script
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -44,13 +52,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.johnny.wxscript.ui.components.StateBox
 import com.johnny.wxscript.utils.WeLogger
@@ -80,6 +90,7 @@ fun PluginEditorScreen(
     var consoleMode by remember { mutableIntStateOf(1) } // 0 隐藏 / 1 半屏 / 2 全屏
     var menuOpen by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
+    var errorLines by remember(pluginId) { mutableStateOf<Set<Int>>(emptySet()) }
 
     LaunchedEffect(pluginId) {
         val loaded = withContext(Dispatchers.IO) {
@@ -90,6 +101,25 @@ fun PluginEditorScreen(
             val src = withContext(Dispatchers.IO) { ScriptData.readMainSource(loaded) }
             value = TextFieldValue(src)
             savedText = src
+        }
+    }
+
+    // gutter 红点：从最近日志里挑出属于本插件的错误行。
+    // 3 秒轮询足够跟上「保存 → 重载 → 报错」的节奏，又不至于频繁读文件。
+    LaunchedEffect(pluginId, item?.name) {
+        val target = item ?: return@LaunchedEffect
+        while (true) {
+            val lines = withContext(Dispatchers.IO) {
+                runCatching {
+                    val (_, tail) = WeLogger.readRecentLines(400)
+                    tail.filter { it.contains(target.name, true) || it.contains(target.id, true) }
+                        .filter { line -> line.getOrNull(24) == 'E' || line.getOrNull(24) == 'A' }
+                        .mapNotNull { parseLineNumber(it) }
+                        .toSet()
+                }.getOrDefault(emptySet())
+            }
+            errorLines = lines
+            delay(3000)
         }
     }
 
@@ -205,22 +235,43 @@ fun PluginEditorScreen(
             return@Column
         }
 
-        Box(
-            Modifier.weight(1f).fillMaxWidth()
-        ) {
-            val scroll = rememberScrollState()
+        val scroll = rememberScrollState()
+        val scheme = MaterialTheme.colorScheme
+        val palette = remember(scheme) {
+            HighlightColors(
+                keyword = scheme.primary,
+                comment = Color(0xFF6A9955),
+                string = Color(0xFFCE9178),
+                number = Color(0xFFB5CEA8),
+                annotation = Color(0xFF4EC9B0),
+            )
+        }
+        val lineCount = remember(value.text) { value.text.count { it == '\n' } + 1 }
+        val cursorLine = remember(value.selection) { lineOfOffset(value.text, value.selection.start) }
+
+        Row(Modifier.weight(1f).fillMaxWidth()) {
+            EditorGutter(
+                lineCount = lineCount,
+                errorLines = errorLines,
+                cursorLine = cursorLine,
+                scroll = scroll,
+            )
             BasicTextField(
                 value = value,
                 onValueChange = { value = it },
                 modifier = Modifier
-                    .fillMaxSize()
+                    .weight(1f)
+                    .fillMaxHeight()
                     .verticalScroll(scroll)
-                    .padding(12.dp),
+                    .padding(start = 8.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
                 textStyle = TextStyle(
                     fontFamily = FontFamily.Monospace,
                     fontSize = 12.sp,
+                    lineHeight = 18.sp,
                     color = MaterialTheme.colorScheme.onSurface,
                 ),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                visualTransformation = JavaHighlightTransformation(palette),
             )
         }
 
@@ -366,4 +417,67 @@ private fun formatSource(src: String): String {
         out.append(line).append('\n')
     }
     return out.toString()
+}
+
+/**
+ * 行号栏。
+ *
+ * 不用两个 scrollable 共享 ScrollState（会互相抢夺滚动），
+ * 而是读取编辑器的 [scroll.value] 做整体位移，只渲染可见范围内的行号，
+ * 因此上千行也不会掉帧。
+ */
+@Composable
+private fun EditorGutter(
+    lineCount: Int,
+    errorLines: Set<Int>,
+    cursorLine: Int,
+    scroll: ScrollState,
+) {
+    val rowHeight = 18.dp
+    val topPadding = 12.dp
+    BoxWithConstraints(
+        Modifier
+            .width(46.dp)
+            .fillMaxHeight()
+            .clipToBounds()
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+    ) {
+        val density = LocalDensity.current
+        val rowHeightPx = with(density) { rowHeight.toPx() }
+        val topPaddingPx = with(density) { topPadding.toPx() }
+        val visibleRows = (maxHeight / rowHeight).toInt() + 3
+        val firstIndex = ((scroll.value - topPaddingPx) / rowHeightPx).toInt()
+            .coerceIn(0, (lineCount - 1).coerceAtLeast(0))
+        val lastIndex = minOf(lineCount - 1, firstIndex + visibleRows)
+
+        Column(
+            Modifier
+                .offset { IntOffset(0, (topPaddingPx - scroll.value).toInt()) }
+                .fillMaxWidth()
+        ) {
+            for (index in firstIndex..lastIndex) {
+                val no = index + 1
+                val hasError = errorLines.contains(no)
+                Row(
+                    Modifier.height(rowHeight).fillMaxWidth().padding(end = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    if (hasError) {
+                        Box(Modifier.size(4.dp).background(MaterialTheme.colorScheme.error, CircleShape))
+                        Spacer(Modifier.width(3.dp))
+                    }
+                    Text(
+                        "$no",
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                        color = when {
+                            hasError -> MaterialTheme.colorScheme.error
+                            no == cursorLine -> MaterialTheme.colorScheme.primary
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
+                        },
+                    )
+                }
+            }
+        }
+    }
 }

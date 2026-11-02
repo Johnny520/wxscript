@@ -67,13 +67,13 @@ fun MarketDetailScreen(remotePluginId: String, onBack: () -> Unit) {
     LaunchedEffect(remotePluginId, reloadToken) {
         loading = true
         error = null
-        val detail = runCatching { MarketData.detail(context, remotePluginId) }
+        val detail = withContext(Dispatchers.IO) { MarketData.detail(context, remotePluginId) }
         detail.fold(
             onSuccess = { item = it },
             onFailure = { item = null; error = it.message ?: it.javaClass.simpleName },
         )
         history = withContext(Dispatchers.IO) {
-            runCatching { MarketData.history(context, remotePluginId) }.getOrDefault(emptyList())
+            MarketData.history(context, remotePluginId).getOrDefault(emptyList())
         }
         loading = false
     }

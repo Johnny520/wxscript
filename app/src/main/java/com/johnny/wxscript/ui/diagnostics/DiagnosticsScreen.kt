@@ -297,13 +297,6 @@ private fun collectDiagnostics(context: android.content.Context): List<DiagItem>
     )
 
     val plugins = runCatching { ScriptData.listPlugins(context) }.getOrDefault(emptyList())
-    items += DiagItem(
-        "本地插件",
-        if (plugins.isEmpty()) DotState.RUNNING else DotState.OK,
-        "共 ${plugins.size} 个（启用 ${plugins.count { it.enabled }}，运行中 ${plugins.count { it.running }}）",
-    )
-
-    val plugins = runCatching { ScriptData.listPlugins(context) }.getOrDefault(emptyList())
     val enabledCount = plugins.count { it.enabled }
     val runningCount = plugins.count { it.running }
     items += DiagItem(

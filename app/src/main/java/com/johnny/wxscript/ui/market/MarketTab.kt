@@ -41,7 +41,9 @@ import com.johnny.wxscript.ui.components.SearchField
 import com.johnny.wxscript.ui.components.SectionHeader
 import com.johnny.wxscript.ui.components.StateBox
 import com.johnny.wxscript.ui.components.StatusDot
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 /**
  * 「市场」Tab：浏览 / 搜索 / 排序 / 已安装与可更新筛选，点条目进详情页安装。
@@ -72,7 +74,7 @@ fun MarketTab(onOpenDetail: (String) -> Unit) {
         loading = true
         error = null
         delay(if (query.isBlank()) 0 else 400)
-        val result = runCatching { MarketData.load(context, query, sort) }
+        val result = withContext(Dispatchers.IO) { MarketData.load(context, query, sort) }
         result.fold(
             onSuccess = {
                 items = it
