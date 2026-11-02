@@ -403,14 +403,38 @@ WxScript 有一套**长期不变**的签名密钥，后续所有版本都用它�
 | 全局细横幅 | 引擎未就绪时每个 Tab 顶部一条，点「诊断」直达 |
 | 诊断页 | 重新检测 / 生成报告 / **一键修复（执行前先列出将要做什么）**，逐项 ✅/❌ |
 | 日志页 | 实时控制台（V/D/I/W/E 分级着色 + 关键字过滤 + 暂停 + 清空 + 摘要）+ 崩溃文件（未捕获异常自动落盘 `<moduleData>/crash/*.txt`，可查看/删除） |
-| 市场 Tab | P3 只做服务可用性：显示服务地址 + `/health` 探测（不放假数据） |
+| 市场 Tab | P3 阶段只有服务可用性（已由 P4 接手，见第 11 节） |
 | 我的 | 宿主信息 / 详细日志开关 / 诊断·日志·API 文档入口 / 导出日志摘要 / 关于 |
 
-未做（留给 P4）：
-- 市场：分类 chips、排序、编辑精选、详情页（README/版本历史/兼容性）、已安装/可更新
-- 插件 API 文档的完整版（当前只有速查页，内容严格按代码里真实存在的变量与 info.prop 键写）
+P3 的两项遗留（市场完整化、API 文档完整版）已在 P4 完成，见下一节。
 
 新增的坑：
 26. **`Modifier.matchParentSize()` 只能在 BoxScope 里用**；自己写左滑行时注意内容层要盖在操作层之上，否则点不到。
 27. **`WePrefs` 本身就是 SharedPreferences + Editor**：写值用 `WePrefs.default.putBoolean(k, v)`，没有 `putBool`。
 28. `WeLogger` 的日志文件名前缀是硬编码的 `wcx-`，已改成 `wcxscript-`（同时改了清理用的正则，否则旧日志永远清不掉）。
+
+## 11. P4 进度（2026-11-03，已合并 main `286cf35a`）
+
+| 内容 | 说明 |
+|---|---|
+| 市场列表 | `MarketData.load()` 拉 `GET /v1/plugins`（q / sort=latest|downloads / limit），搜索防抖 400ms，全部在 IO 线程；三种筛选 chip（全部/已安装/可更新）+ 两种排序 chip |
+| 已安装/可更新 | 用 `PluginMarketInstaller.defaultLocalPluginId()` + `existingLocalPluginId()` 把远程条目对齐到本地插件目录，`MarketData.isNewer()` 做版本比较（解析失败按「不同即可更新」） |
+| 详情页 | `MarketDetailScreen`：README（取 files 里的 README.md，回落 description）、文件清单与大小、版本历史（`GET /v1/plugins/{id}/snapshots`）、下载/点赞/评论数、安装与更新按钮 |
+| 安装/更新 | `PluginMarketInstaller.install(overwrite=true)` 覆盖前必须二次确认；装完自动 `reloadPlugin` 让新代码立即生效；`recordDownload` 埋点失败不影响安装 |
+| 服务器切换 | 市场页右上角「服务器」：官方 / 备用 / 自定义地址（校验 http(s) 前缀），保存后立即重拉列表；诊断页新增「探测市场」按钮（`/health`） |
+| 插件 API 文档 | `ApiDocData` 由 `tools/gen_apidoc.py` 从桥接层源码自动生成（wa 144 / bridge 67 / audio 42 条真实签名），文档页分「指南 / wa / bridge / audio」四页，支持搜索 + 按前缀分组；指南里的变量名与回调名取自 `ScriptPluginRuntime` 的 prelude 注入 |
+| 诊断页 | 新增「本地插件」（数量/启用/运行中/市场安装）与「市场服务器」两项，修复项与原来一致 |
+| 编辑器 | 语法高亮（`JavaHighlightTransformation`，Identity 偏移映射，光标不乱跳）+ 行号 gutter（只渲染可见行）+ 错误行红点（3 秒轮询日志里的 E/A 行并解析行号）+ 当前行高亮 |
+| 市场服务端 | `server/plugin-market/`（18 文件：app.py / 9 个迁移 / admin.html / deploy.sh / examples / tests），附 `server/README.md` 说明最小部署与 App 侧接法 |
+
+### P4 新增的坑
+
+29. **`Result` 双重包装**：`MarketData.load/detail/history` 本身返回 `Result`，界面层**不要再套 `runCatching`**，否则 `onSuccess` 拿到的是 `Result` 而不是数据（编译报 `Assignment type mismatch`）。
+30. **Compose 里 `LaunchedEffect` 不等于后台线程**：网络/文件必须 `withContext(Dispatchers.IO)`，否则 `NetworkOnMainThreadException` 直接崩在宿主进程里。
+31. 语法高亮只改颜色不改字符时，`OffsetMapping.Identity` 是唯一安全选择；一旦替换字符（如补空格），选区/光标/IME 全会错位。
+32. 行号栏不要和编辑器共享同一个 `ScrollState`（两个 scrollable 会抢滚动），读 `scroll.value` 自己算位移更稳，且只渲染可见行。
+
+### 尚未完成
+
+- **P5 剥离 WCX**：需仓库 owner 确认时机（WCX 侧删 `h/Hchat` 162 文件、`me/hd` 10、`scripting_*`、`ScriptSubPages/ScriptsPager`、`HchatScriptBootstrap`、相关 nav/loader/proguard）。本窗口按约定**不动 WCX**。
+- **真机验证**：ActivityProxy 在微信进程拉起模块 Activity 是否可用；脚本 Tab 能否列插件、总开关能否打开；`[WxScript:DexInstall]` 是否全部 installed。

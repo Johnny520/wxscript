@@ -58,3 +58,56 @@ jobs:
           name: wxscript-apk
           path: out/*.apk
           if-no-files-found: error
+
+  release:
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download APKs
+        uses: actions/download-artifact@v4
+        with:
+          name: wxscript-apk
+          path: out
+
+      - name: Read version
+        id: ver
+        run: |
+          CODE=$(grep -oP 'versionCode\s*=\s*\K[0-9]+' app/build.gradle.kts | head -1)
+          NAME=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts | head -1)
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "versionCode=$CODE versionName=$NAME"
+
+      - name: Check tag
+        id: tag
+        run: |
+          if git ls-remote --tags origin "refs/tags/v${{ steps.ver.outputs.code }}" | grep -q .; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create release
+        if: steps.tag.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PREV=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -n "$PREV" ]; then
+            NOTES=$(git log --pretty=format:'- %s (%h)' "$PREV"..HEAD)
+          else
+            NOTES=$(git log --pretty=format:'- %s (%h)' -20)
+          fi
+          printf 'WxScript %s\n\n%s\n' "${{ steps.ver.outputs.name }}" "$NOTES" > notes.md
+          gh release create "v${{ steps.ver.outputs.code }}" out/*.apk \
+            --title "WxScript ${{ steps.ver.outputs.name }} (v${{ steps.ver.outputs.code }})" \
+            --notes-file notes.md
+
