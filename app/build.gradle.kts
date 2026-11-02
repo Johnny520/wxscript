@@ -98,6 +98,7 @@ dependencies {
     // miuix-blur 的 minSdk 是 33，引进来会拖高本项目 minSdk，因此不引。
     implementation(libs.miuix.ui)
 
+    implementation(libs.materialkolor)
     implementation(libs.kavaref.core)
     implementation(libs.fastjson2)
     implementation(libs.protobuf.javalite)

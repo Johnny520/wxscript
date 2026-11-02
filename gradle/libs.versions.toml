@@ -25,6 +25,7 @@ mmkv = "2.4.0"
 material3 = "1.5.0-alpha19" # 与 WCX 一致：BOM 默认的 material3 与本项目用到的 expressive API 不兼容
 fragment = "1.8.9"
 browser = "1.10.0"
+materialkolor = "5.0.0"
 hiddenapibypass = "6.1"
 
 [libraries]
@@ -50,6 +51,7 @@ miuix-blur = { module = "top.yukonga.miuix.kmp:miuix-blur-android", version.ref 
 miuix-shader = { module = "top.yukonga.miuix.kmp:miuix-shader-android", version.ref = "miuix" }
 kavaref-core = { module = "com.highcapable.kavaref:kavaref-core", version.ref = "kavaref" }
 fastjson2 = { module = "com.alibaba.fastjson2:fastjson2", version.ref = "fastjson2" }
+materialkolor = { module = "com.materialkolor:material-kolor", version.ref = "materialkolor" }
 protobuf-javalite = { module = "com.google.protobuf:protobuf-javalite", version.ref = "protobuf" }
 okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
