@@ -156,4 +156,46 @@ object ScriptData {
         else ScriptPluginManager.ImportConflictAction.SKIP
         ScriptPluginManager.applyImport(context, sessionId, conflictPluginIds.associateWith { action }).getOrThrow()
     }
+
+    // ───────────────────────────── 批量 / 重命名 / 导出 ─────────────────────────────
+
+    fun renamePlugin(context: Context, pluginId: String, newName: String): Result<String> = runCatching {
+        val plugin = ScriptPluginManager.renamePlugin(context, pluginId, newName).getOrThrow()
+        plugin.displayName ?: plugin.name
+    }
+
+    fun setPinned(context: Context, pluginIds: Collection<String>, pinned: Boolean): Result<Unit> =
+        runCatching { ScriptPluginManager.setPinned(context, pluginIds, pinned).getOrThrow() }
+
+    /**
+     * 批量启停。
+     *
+     * 逐个调用运行时的开关（它内部有按插件的锁与状态回写），
+     * 只要有一个失败就整体返回失败，但已成功的不会回滚——把失败数量如实报给用户。
+     */
+    fun setPluginsEnabled(context: Context, pluginIds: Collection<String>, enabled: Boolean): Result<Int> =
+        runCatching {
+            var ok = 0
+            val errors = ArrayList<String>()
+            pluginIds.forEach { id ->
+                runCatching { ScriptPluginRuntime.setPluginEnabled(context, id, enabled).getOrThrow(); ok++ }
+                    .onFailure { errors += (id + ": " + (it.message ?: "未知原因")) }
+            }
+            if (errors.isNotEmpty()) {
+                error("成功 $ok 个，失败 ${errors.size} 个：" + errors.take(3).joinToString("；"))
+            }
+            ok
+        }
+
+    fun deletePlugins(context: Context, pluginIds: Collection<String>): Result<Int> = runCatching {
+        ScriptPluginManager.deletePlugins(context, pluginIds).getOrThrow().deletedPluginIds.size
+    }
+
+    fun exportPlugins(context: Context, pluginIds: Collection<String>, uri: Uri): Result<Int> = runCatching {
+        val resolver = context.contentResolver
+        resolver.openOutputStream(uri, "wt").use { output ->
+            requireNotNull(output) { "无法写入所选文件" }
+            ScriptPluginManager.exportPlugins(context, pluginIds, output).getOrThrow().exportedPluginIds.size
+        }
+    }
 }
