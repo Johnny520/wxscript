@@ -160,7 +160,8 @@ object ScriptData {
     // ───────────────────────────── 批量 / 重命名 / 导出 ─────────────────────────────
 
     fun renamePlugin(context: Context, pluginId: String, newName: String): Result<String> = runCatching {
-        ScriptPluginManager.renamePlugin(context, pluginId, newName).getOrThrow().displayName
+        val plugin = ScriptPluginManager.renamePlugin(context, pluginId, newName).getOrThrow()
+        plugin.displayName ?: plugin.name
     }
 
     fun setPinned(context: Context, pluginIds: Collection<String>, pinned: Boolean): Result<Unit> =
