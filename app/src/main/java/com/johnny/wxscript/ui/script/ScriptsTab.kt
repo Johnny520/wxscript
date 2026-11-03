@@ -4,7 +4,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -21,10 +23,12 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -32,7 +36,9 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -80,6 +86,10 @@ fun ScriptsTab(
     var query by remember { mutableStateOf("") }
     var segment by remember { mutableIntStateOf(1) } // 0 已启用 / 1 全部
     var readmeTarget by remember { mutableStateOf<ScriptData.PluginItem?>(null) }
+    var moreTarget by remember { mutableStateOf<ScriptData.PluginItem?>(null) }
+    var renameTarget by remember { mutableStateOf<ScriptData.PluginItem?>(null) }
+    var deleteTarget by remember { mutableStateOf<ScriptData.PluginItem?>(null) }
+    var confirmBatchDelete by remember { mutableStateOf(false) }
     var importResult by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -96,6 +106,19 @@ fun ScriptsTab(
         }
     }
 
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        if (uri == null) snapshot.pendingExportIds = null else snapshot.exportTo(uri)
+    }
+
+    // 「导出」先置 pendingExportIds，再弹系统保存框；用户取消就清掉待导出列表。
+    LaunchedEffect(snapshot.pendingExportIds) {
+        snapshot.pendingExportIds?.let { ids ->
+            exportLauncher.launch("wxscript-plugins-" + ids.size + ".zip")
+        }
+    }
+
     val all = snapshot.plugins
     val filtered = all
         .filter { segment == 1 || it.enabled }
@@ -106,8 +129,9 @@ fun ScriptsTab(
     val localGroup = filtered.filter { !it.fromMarket }
     val marketGroup = filtered.filter { it.fromMarket }
 
+    Box(Modifier.fillMaxSize()) {
     LazyColumn(
-        contentPadding = PaddingValues(bottom = 96.dp),
+        contentPadding = PaddingValues(bottom = if (snapshot.selectionMode) 178.dp else 96.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
         item {
@@ -178,12 +202,15 @@ fun ScriptsTab(
                 items(localGroup, key = { "p-" + it.id }) { item ->
                     PluginRow(
                         item = item,
+                        selected = item.id in snapshot.selectedIds,
+                        selectionMode = snapshot.selectionMode,
                         onToggle = { want -> snapshot.toggle(item, want) },
                         onEdit = { onEdit(item.id) },
                         onLogs = { onLogs(item.id) },
                         onReadme = { readmeTarget = item },
-                        onSettings = { snapshot.openSettings(item) },
-                        onDelete = { snapshot.delete(item) },
+                        onMore = { moreTarget = item },
+                        onLongPress = { snapshot.enterSelection(item.id) },
+                        onSelectToggle = { snapshot.toggleSelection(item.id) },
                     )
                 }
             }
@@ -192,12 +219,15 @@ fun ScriptsTab(
                 items(marketGroup, key = { "m-" + it.id }) { item ->
                     PluginRow(
                         item = item,
+                        selected = item.id in snapshot.selectedIds,
+                        selectionMode = snapshot.selectionMode,
                         onToggle = { want -> snapshot.toggle(item, want) },
                         onEdit = { onEdit(item.id) },
                         onLogs = { onLogs(item.id) },
                         onReadme = { readmeTarget = item },
-                        onSettings = { snapshot.openSettings(item) },
-                        onDelete = { snapshot.delete(item) },
+                        onMore = { moreTarget = item },
+                        onLongPress = { snapshot.enterSelection(item.id) },
+                        onSelectToggle = { snapshot.toggleSelection(item.id) },
                     )
                 }
             }
@@ -221,10 +251,78 @@ fun ScriptsTab(
         }
     }
 
+        if (snapshot.selectionMode) {
+            BatchBar(
+                modifier = Modifier.align(Alignment.BottomCenter),
+                selectedCount = snapshot.selectedIds.size,
+                totalCount = all.size,
+                onSelectAll = { snapshot.selectAll() },
+                onCancel = { snapshot.clearSelection() },
+                onEnable = { snapshot.batchSetEnabled(true) },
+                onDisable = { snapshot.batchSetEnabled(false) },
+                onPin = { snapshot.batchSetPinned(true) },
+                onUnpin = { snapshot.batchSetPinned(false) },
+                onExport = { snapshot.requestExport() },
+                onDelete = { confirmBatchDelete = true },
+            )
+        }
+    }
+
     readmeTarget?.let { item ->
         ReadmeDialog(name = item.displayName, content = remember(item.id) { ScriptData.readReadme(item) }) {
             readmeTarget = null
         }
+    }
+
+    moreTarget?.let { item ->
+        MoreActionsDialog(
+            name = item.displayName,
+            onDismiss = { moreTarget = null },
+            onReadme = { moreTarget = null; readmeTarget = item },
+            onSettings = { moreTarget = null; snapshot.openSettings(item) },
+            onRename = { moreTarget = null; renameTarget = item },
+            onCopyId = {
+                moreTarget = null
+                copyToClipboard(context, item.id)
+                snapshot.toast("已复制插件 ID：${item.id}")
+            },
+            onDelete = { moreTarget = null; deleteTarget = item },
+        )
+    }
+
+    renameTarget?.let { item ->
+        RenameDialog(
+            current = item.displayName,
+            onDismiss = { renameTarget = null },
+            onConfirm = { name ->
+                renameTarget = null
+                snapshot.rename(item.id, name)
+            },
+        )
+    }
+
+    deleteTarget?.let { item ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text("卸载插件") },
+            text = { Text("确定删除「${item.displayName}」？插件目录会被移除，此操作不可撤销。") },
+            confirmButton = {
+                TextButton(onClick = { deleteTarget = null; snapshot.delete(item) }) { Text("卸载") }
+            },
+            dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("取消") } },
+        )
+    }
+
+    if (confirmBatchDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmBatchDelete = false },
+            title = { Text("批量卸载") },
+            text = { Text("确定删除选中的 ${snapshot.selectedIds.size} 个插件？此操作不可撤销。") },
+            confirmButton = {
+                TextButton(onClick = { confirmBatchDelete = false; snapshot.batchDelete() }) { Text("删除") }
+            },
+            dismissButton = { TextButton(onClick = { confirmBatchDelete = false }) { Text("取消") } },
+        )
     }
 
     snapshot.pendingImport?.let { (inspection, conflicts) ->
@@ -287,28 +385,35 @@ private fun MasterSwitchRow(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun PluginRow(
     item: ScriptData.PluginItem,
+    selected: Boolean,
+    selectionMode: Boolean,
     onToggle: (Boolean) -> Unit,
     onEdit: () -> Unit,
     onLogs: () -> Unit,
     onReadme: () -> Unit,
-    onSettings: () -> Unit,
-    onDelete: () -> Unit,
+    onMore: () -> Unit,
+    onLongPress: () -> Unit,
+    onSelectToggle: () -> Unit,
 ) {
     SwipeRevealRow(
         actions = {
             IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, contentDescription = "编辑") }
             IconButton(onClick = onLogs) { Icon(Icons.Filled.List, contentDescription = "日志") }
-            IconButton(onClick = onSettings) { Icon(Icons.Filled.Settings, contentDescription = "设置") }
-            IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, contentDescription = "卸载") }
+            IconButton(onClick = onMore) { Icon(Icons.Filled.MoreVert, contentDescription = "更多") }
         },
     ) {
         ListItem(
             colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface),
             leadingContent = {
-                Icon(Icons.Filled.Description, contentDescription = null)
+                if (selectionMode) {
+                    Checkbox(checked = selected, onCheckedChange = { onSelectToggle() })
+                } else {
+                    Icon(Icons.Filled.Description, contentDescription = null)
+                }
             },
             headlineContent = {
                 Text(item.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -326,9 +431,14 @@ private fun PluginRow(
                 }
             },
             trailingContent = {
-                Switch(checked = item.enabled, onCheckedChange = onToggle)
+                if (!selectionMode) {
+                    Switch(checked = item.enabled, onCheckedChange = onToggle)
+                }
             },
-            modifier = Modifier.clickable(onClick = onReadme),
+            modifier = Modifier.combinedClickable(
+                onClick = { if (selectionMode) onSelectToggle() else onReadme() },
+                onLongClick = onLongPress,
+            ),
         )
         HorizontalDivider()
     }
@@ -386,4 +496,128 @@ private fun ImportDialog(
             }
         },
     )
+}
+
+/** 多选模式下的底部操作栏。 */
+@Composable
+private fun BatchBar(
+    modifier: Modifier = Modifier,
+    selectedCount: Int,
+    totalCount: Int,
+    onSelectAll: () -> Unit,
+    onCancel: () -> Unit,
+    onEnable: () -> Unit,
+    onDisable: () -> Unit,
+    onPin: () -> Unit,
+    onUnpin: () -> Unit,
+    onExport: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        tonalElevation = 3.dp,
+        shadowElevation = 8.dp,
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "已选 $selectedCount / $totalCount",
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onSelectAll) { Text("全选") }
+                TextButton(onClick = onCancel) { Text("完成") }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onEnable) { Text("启用") }
+                OutlinedButton(onClick = onDisable) { Text("停用") }
+                OutlinedButton(onClick = onPin) { Text("置顶") }
+                OutlinedButton(onClick = onUnpin) { Text("取消置顶") }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
+                OutlinedButton(onClick = onExport) {
+                    Icon(Icons.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("导出 zip")
+                }
+                OutlinedButton(onClick = onDelete) {
+                    Icon(Icons.Filled.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("删除")
+                }
+            }
+        }
+    }
+}
+
+/** 行尾「更多」菜单：README / 设置 / 重命名 / 复制 ID / 卸载。 */
+@Composable
+private fun MoreActionsDialog(
+    name: String,
+    onDismiss: () -> Unit,
+    onReadme: () -> Unit,
+    onSettings: () -> Unit,
+    onRename: () -> Unit,
+    onCopyId: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(name) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                DialogAction("查看 README", onReadme)
+                DialogAction("插件设置（openSettings）", onSettings)
+                DialogAction("重命名", onRename)
+                DialogAction("复制插件 ID", onCopyId)
+                DialogAction("卸载插件", onDelete, danger = true)
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } },
+    )
+}
+
+@Composable
+private fun DialogAction(text: String, onClick: () -> Unit, danger: Boolean = false) {
+    Text(
+        text,
+        style = MaterialTheme.typography.bodyLarge,
+        color = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp),
+    )
+}
+
+@Composable
+private fun RenameDialog(current: String, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+    var text by remember { mutableStateOf(current) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("重命名插件") },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                singleLine = true,
+                label = { Text("显示名称") },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = {
+            TextButton(
+                enabled = text.isNotBlank(),
+                onClick = { onConfirm(text.trim()) },
+            ) { Text("保存") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
+}
+
+private fun copyToClipboard(context: android.content.Context, text: String) {
+    runCatching {
+        val manager = context.getSystemService(android.content.ClipboardManager::class.java)
+        manager?.setPrimaryClip(android.content.ClipData.newPlainText("wxscript", text))
+    }
 }

@@ -20,6 +20,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -39,17 +40,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.johnny.wxscript.ui.components.LoadingBox
 import com.johnny.wxscript.ui.components.SectionHeader
+import com.johnny.wxscript.ui.components.SegmentedTabs
 import com.johnny.wxscript.ui.components.StateBox
+import h.Hchat.hooks.items.script.market.PluginMarketComment
 import h.Hchat.hooks.items.script.market.PluginMarketHistoryVersion
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * 市场插件详情页：README / 版本历史 / 文件清单 / 安装与更新。
+ * 市场插件详情页：安装/更新 + 点赞/关注 + README/文件/版本历史/评论。
  *
- * 「可更新」的判定与列表一致（[MarketData.isNewer]），安装走
- * [MarketData.install]，覆盖安装前必须二次确认。
+ * 社交操作依赖当前微信账号（[MarketSocial.identity]），账号 API 未就绪时
+ * 相关按钮禁用并在页面底部提示去诊断页，避免「点了没反应」。
  */
 @Composable
 fun MarketDetailScreen(remotePluginId: String, onBack: () -> Unit) {
@@ -64,6 +67,35 @@ fun MarketDetailScreen(remotePluginId: String, onBack: () -> Unit) {
     var installing by remember { mutableStateOf(false) }
     var confirmOverwrite by remember { mutableStateOf(false) }
 
+    var liked by remember(remotePluginId) { mutableStateOf(false) }
+    var liking by remember { mutableStateOf(false) }
+    var following by remember(remotePluginId) { mutableStateOf(false) }
+    var socialError by remember { mutableStateOf<String?>(null) }
+
+    var tab by remember { mutableIntStateOf(0) }
+    var comments by remember { mutableStateOf<List<PluginMarketComment>>(emptyList()) }
+    var commentTotal by remember { mutableIntStateOf(0) }
+    var commentLoading by remember { mutableStateOf(false) }
+    var commentText by remember { mutableStateOf("") }
+    var replyTo by remember { mutableStateOf<PluginMarketComment?>(null) }
+    var sending by remember { mutableStateOf(false) }
+    var deleteTarget by remember { mutableStateOf<PluginMarketComment?>(null) }
+
+    fun reloadComments() {
+        commentLoading = true
+        scope.launch {
+            val res = withContext(Dispatchers.IO) { MarketSocial.comments(context, remotePluginId, 50) }
+            res.fold(
+                onSuccess = { page ->
+                    comments = page.items
+                    commentTotal = page.total.toInt()
+                },
+                onFailure = { socialError = it.message ?: it.javaClass.simpleName },
+            )
+            commentLoading = false
+        }
+    }
+
     LaunchedEffect(remotePluginId, reloadToken) {
         loading = true
         error = null
@@ -76,6 +108,19 @@ fun MarketDetailScreen(remotePluginId: String, onBack: () -> Unit) {
             MarketData.history(context, remotePluginId).getOrDefault(emptyList())
         }
         loading = false
+
+        // 社交状态是「附加信息」：失败不影响页面主体，只在按钮下方给一行提示。
+        val like = withContext(Dispatchers.IO) { MarketSocial.likeStatus(context, remotePluginId) }
+        like.fold(
+            onSuccess = { liked = it.liked },
+            onFailure = { socialError = it.message ?: it.javaClass.simpleName },
+        )
+        val follow = withContext(Dispatchers.IO) { MarketSocial.followStatus(context, remotePluginId) }
+        follow.fold(
+            onSuccess = { following = it },
+            onFailure = { socialError = it.message ?: it.javaClass.simpleName },
+        )
+        reloadComments()
     }
 
     fun doInstall() {
@@ -98,7 +143,7 @@ fun MarketDetailScreen(remotePluginId: String, onBack: () -> Unit) {
                     ).show()
                     reloadToken++
                 },
-                onFailure = { it ->
+                onFailure = {
                     Toast.makeText(context, "安装失败：" + (it.message ?: it.javaClass.simpleName), Toast.LENGTH_LONG).show()
                 },
             )
@@ -120,9 +165,10 @@ fun MarketDetailScreen(remotePluginId: String, onBack: () -> Unit) {
         }
         HorizontalDivider()
 
+        val current = item
         when {
-            loading && item == null -> LoadingBox("正在读取插件详情…")
-            item == null -> StateBox(
+            loading && current == null -> LoadingBox("正在读取插件详情…")
+            current == null -> StateBox(
                 emoji = "⚠️",
                 title = "详情读取失败",
                 detail = error,
@@ -130,7 +176,6 @@ fun MarketDetailScreen(remotePluginId: String, onBack: () -> Unit) {
                 onAction = { reloadToken++ },
             )
             else -> {
-                val current = item!!
                 LazyColumn(contentPadding = PaddingValues(bottom = 96.dp)) {
                     item {
                         Column(
@@ -144,7 +189,8 @@ fun MarketDetailScreen(remotePluginId: String, onBack: () -> Unit) {
                                     fontWeight = FontWeight.Bold,
                                     modifier = Modifier.weight(1f),
                                 )
-                                if (current.updateAvailable) Badge("可更新") else if (current.installed) Badge("已安装", muted = true)
+                                if (current.updateAvailable) Badge("可更新")
+                                else if (current.installed) Badge("已安装", muted = true)
                             }
                             Text(
                                 buildString {
@@ -164,7 +210,7 @@ fun MarketDetailScreen(remotePluginId: String, onBack: () -> Unit) {
                                 buildString {
                                     append("下载 ").append(current.plugin.downloadCount)
                                     append(" · 点赞 ").append(current.plugin.likeCount)
-                                    append(" · 评论 ").append(current.plugin.commentCount)
+                                    append(" · 评论 ").append(maxOf(current.plugin.commentCount, commentTotal.toLong()))
                                 },
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -177,13 +223,12 @@ fun MarketDetailScreen(remotePluginId: String, onBack: () -> Unit) {
 
                     item {
                         Row(
-                            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Button(
-                                onClick = {
-                                    if (current.installed) confirmOverwrite = true else doInstall()
-                                },
+                                onClick = { if (current.installed) confirmOverwrite = true else doInstall() },
                                 enabled = !installing && current.plugin.files.isNotEmpty(),
                             ) {
                                 Text(
@@ -195,14 +240,56 @@ fun MarketDetailScreen(remotePluginId: String, onBack: () -> Unit) {
                                     }
                                 )
                             }
-                            OutlinedButton(onClick = onBack) { Text("返回列表") }
+                            OutlinedButton(
+                                enabled = !liking && socialError == null,
+                                onClick = {
+                                    val next = !liked
+                                    liking = true
+                                    scope.launch {
+                                        val res = withContext(Dispatchers.IO) {
+                                            MarketSocial.setLiked(context, remotePluginId, next)
+                                        }
+                                        liking = false
+                                        res.fold(
+                                            onSuccess = { liked = it.liked },
+                                            onFailure = { Toast.makeText(context, "点赞失败：" + (it.message ?: ""), Toast.LENGTH_SHORT).show() },
+                                        )
+                                    }
+                                },
+                            ) { Text(if (liked) "♥ 已赞" else "♡ 点赞") }
+                            OutlinedButton(
+                                enabled = socialError == null,
+                                onClick = {
+                                    val next = !following
+                                    scope.launch {
+                                        val res = withContext(Dispatchers.IO) {
+                                            MarketSocial.setFollowing(context, remotePluginId, next)
+                                        }
+                                        res.fold(
+                                            onSuccess = { following = it },
+                                            onFailure = { Toast.makeText(context, "关注失败：" + (it.message ?: ""), Toast.LENGTH_SHORT).show() },
+                                        )
+                                    }
+                                },
+                            ) { Text(if (following) "已关注" else "关注") }
+                        }
+                    }
+
+                    socialError?.let { message ->
+                        item {
+                            Text(
+                                "账号能力未就绪，点赞/关注/评论不可用：$message",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                            )
                         }
                     }
 
                     if (current.plugin.files.isEmpty()) {
                         item {
                             Text(
-                                "该条目没有携带文件内容（可能是服务端只返回了元信息），无法直接安装。",
+                                "该条目没有携带文件内容（可能服务端只返回了元信息），无法直接安装。",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.padding(16.dp),
@@ -210,88 +297,173 @@ fun MarketDetailScreen(remotePluginId: String, onBack: () -> Unit) {
                         }
                     }
 
-                    item { SectionHeader("README") }
                     item {
-                        Text(
-                            MarketData.readme(current.plugin),
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 12.sp,
-                                lineHeight = 18.sp,
-                            ),
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                        )
+                        SegmentedTabs(listOf("介绍", "评论 ($commentTotal)"), tab) { tab = it }
                     }
 
-                    item { SectionHeader("文件清单") }
-                    item {
-                        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-                            current.plugin.files.forEach { file ->
-                                Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                    if (tab == 0) {
+                        item { SectionHeader("README") }
+                        item {
+                            Text(
+                                MarketData.readme(current.plugin),
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 12.sp,
+                                    lineHeight = 18.sp,
+                                ),
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                            )
+                        }
+
+                        item { SectionHeader("文件清单") }
+                        item {
+                            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                                current.plugin.files.forEach { file ->
+                                    Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                                        Text(
+                                            file.name,
+                                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                        Text(
+                                            "${file.size} B",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        item { SectionHeader("版本历史") }
+                        if (history.isEmpty()) {
+                            item {
+                                Text(
+                                    "服务端没有返回历史版本（或这个服务器不提供历史接口）。",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 16.dp),
+                                )
+                            }
+                        } else {
+                            items(history.size) { index ->
+                                val version = history[index]
+                                Column(
+                                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                                ) {
                                     Text(
-                                        file.name,
-                                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                                        modifier = Modifier.weight(1f),
+                                        "v" + version.versionName.ifBlank { version.versionId.take(8) },
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold,
                                     )
                                     Text(
-                                        "${file.size} B",
+                                        buildString {
+                                            if (version.createdAt.isNotBlank()) append(version.createdAt)
+                                            if (version.totalSize > 0) {
+                                                if (isNotEmpty()) append(" · ")
+                                                append(version.totalSize).append(" B")
+                                            }
+                                        },
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
+                                    if (version.releaseNotes.isNotBlank()) {
+                                        Text(version.releaseNotes, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                    HorizontalDivider(Modifier.padding(top = 6.dp))
                                 }
                             }
                         }
-                    }
 
-                    item { SectionHeader("版本历史") }
-                    if (history.isEmpty()) {
                         item {
                             Text(
-                                "服务端没有返回历史版本（或这个服务器不提供历史接口）。",
-                                style = MaterialTheme.typography.bodySmall,
+                                "兼容性：市场条目不携带微信版本范围，安装后请到「脚本」页确认插件是否正常加载，" +
+                                    "加载失败时进入诊断页查看原因。",
+                                style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 16.dp),
+                                modifier = Modifier.padding(16.dp),
                             )
                         }
                     } else {
-                        items(history.size) { index ->
-                            val version = history[index]
-                            Column(
-                                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                        item {
+                            Row(
+                                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.Bottom,
                             ) {
-                                Text(
-                                    "v" + version.versionName.ifBlank { version.versionId.take(8) },
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.SemiBold,
+                                OutlinedTextField(
+                                    value = commentText,
+                                    onValueChange = { commentText = it },
+                                    modifier = Modifier.weight(1f),
+                                    label = { Text(if (replyTo == null) "写评论…" else "回复 ${replyTo?.userNickname}") },
+                                    maxLines = 3,
                                 )
-                                Text(
-                                    buildString {
-                                        if (version.createdAt.isNotBlank()) append(version.createdAt)
-                                        if (version.totalSize > 0) {
-                                            if (isNotEmpty()) append(" · ")
-                                            append(version.totalSize).append(" B")
+                                Spacer(Modifier.width(8.dp))
+                                Button(
+                                    enabled = !sending && commentText.isNotBlank() && socialError == null,
+                                    onClick = {
+                                        val text = commentText.trim()
+                                        val parent = replyTo
+                                        sending = true
+                                        scope.launch {
+                                            val res = withContext(Dispatchers.IO) {
+                                                if (parent == null) MarketSocial.comment(context, remotePluginId, text)
+                                                else MarketSocial.reply(context, remotePluginId, parent.commentId, text)
+                                            }
+                                            sending = false
+                                            res.fold(
+                                                onSuccess = {
+                                                    commentText = ""
+                                                    replyTo = null
+                                                    reloadComments()
+                                                },
+                                                onFailure = {
+                                                    Toast.makeText(context, "发送失败：" + (it.message ?: ""), Toast.LENGTH_SHORT).show()
+                                                },
+                                            )
                                         }
                                     },
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                if (version.releaseNotes.isNotBlank()) {
-                                    Text(version.releaseNotes, style = MaterialTheme.typography.bodySmall)
-                                }
-                                HorizontalDivider(Modifier.padding(top = 6.dp))
+                                ) { Text(if (sending) "发送中" else "发送") }
                             }
                         }
-                    }
 
-                    item {
-                        Text(
-                            "兼容性：市场条目不携带微信版本范围，安装后请到「脚本」页确认插件是否正常加载，" +
-                                "加载失败时进入诊断页查看原因。",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(16.dp),
-                        )
+                        if (commentLoading && comments.isEmpty()) {
+                            item { LoadingBox("正在读取评论…") }
+                        } else if (comments.isEmpty()) {
+                            item {
+                                StateBox("💬", "还没有评论", "可以发第一条")
+                            }
+                        } else {
+                            items(comments.size) { index ->
+                                val comment = comments[index]
+                                Column(
+                                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(3.dp),
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            comment.userNickname.ifBlank { "匿名" },
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                        Text(
+                                            comment.createdAt,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    Text(comment.content, style = MaterialTheme.typography.bodySmall)
+                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        TextButton(onClick = { replyTo = comment }) { Text("回复") }
+                                        if (comment.canDelete) {
+                                            TextButton(onClick = { deleteTarget = comment }) { Text("删除") }
+                                        }
+                                    }
+                                    HorizontalDivider()
+                                }
+                            }
+                        }
                     }
 
                     if (error != null) {
@@ -324,6 +496,31 @@ fun MarketDetailScreen(remotePluginId: String, onBack: () -> Unit) {
                 TextButton(onClick = { confirmOverwrite = false; doInstall() }) { Text("确认覆盖") }
             },
             dismissButton = { TextButton(onClick = { confirmOverwrite = false }) { Text("取消") } },
+        )
+    }
+
+    deleteTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text("删除评论") },
+            text = { Text("确定删除这条评论？") },
+            confirmButton = {
+                TextButton(onClick = {
+                    deleteTarget = null
+                    scope.launch {
+                        val res = withContext(Dispatchers.IO) {
+                            MarketSocial.deleteComment(context, remotePluginId, target.commentId)
+                        }
+                        res.fold(
+                            onSuccess = { reloadComments() },
+                            onFailure = {
+                                Toast.makeText(context, "删除失败：" + (it.message ?: ""), Toast.LENGTH_SHORT).show()
+                            },
+                        )
+                    }
+                }) { Text("删除") }
+            },
+            dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("取消") } },
         )
     }
 }

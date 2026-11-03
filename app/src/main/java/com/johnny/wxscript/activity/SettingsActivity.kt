@@ -36,6 +36,8 @@ import com.johnny.wxscript.ui.home.EngineBanner
 import com.johnny.wxscript.ui.home.HomeTab
 import com.johnny.wxscript.ui.logs.LogsScreen
 import com.johnny.wxscript.ui.market.MarketDetailScreen
+import com.johnny.wxscript.ui.market.MarketNotificationsScreen
+import com.johnny.wxscript.ui.market.MarketUploadScreen
 import com.johnny.wxscript.ui.market.MarketTab
 import com.johnny.wxscript.ui.mine.MineTab
 import com.johnny.wxscript.ui.script.PluginEditorScreen
@@ -50,6 +52,8 @@ sealed interface WxRoute {
     data object Logs : WxRoute
     data object ApiDocs : WxRoute
     data class MarketDetail(val remotePluginId: String) : WxRoute
+    data object MarketNotifications : WxRoute
+    data object MarketUpload : WxRoute
 }
 
 /** WxScript 设置主界面：4 个底栏 Tab（首页 / 脚本 / 市场 / 我的），默认落在「脚本」。 */
@@ -105,6 +109,20 @@ private fun WxScriptRoot() {
             ApiDocsScreen(onBack = { route = WxRoute.Root })
             return
         }
+        WxRoute.MarketNotifications -> {
+            MarketNotificationsScreen(
+                onBack = { route = WxRoute.Root },
+                onOpenPlugin = { id -> route = WxRoute.MarketDetail(id) },
+            )
+            return
+        }
+        WxRoute.MarketUpload -> {
+            MarketUploadScreen(
+                onBack = { route = WxRoute.Root },
+                onOpenMarket = { tab = 2; route = WxRoute.Root },
+            )
+            return
+        }
         is WxRoute.MarketDetail -> {
             MarketDetailScreen(
                 remotePluginId = current.remotePluginId,
@@ -145,7 +163,11 @@ private fun WxScriptRoot() {
                         onLogs = { route = WxRoute.Logs },
                         onDiagnostics = openDiagnostics,
                     )
-                    2 -> MarketTab(onOpenDetail = { id -> route = WxRoute.MarketDetail(id) })
+                    2 -> MarketTab(
+                        onOpenDetail = { id -> route = WxRoute.MarketDetail(id) },
+                        onOpenNotifications = { route = WxRoute.MarketNotifications },
+                        onOpenUpload = { route = WxRoute.MarketUpload },
+                    )
                     else -> MineTab(
                         onOpenDiagnostics = openDiagnostics,
                         onOpenLogs = openLogs,

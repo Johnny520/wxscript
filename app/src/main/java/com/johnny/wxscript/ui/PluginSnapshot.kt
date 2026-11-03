@@ -71,6 +71,109 @@ class PluginSnapshotState(
         res.onFailure { toast("插件设置打开失败：" + (it.message ?: "插件未实现 openSettings")) }
     }
 
+    // ───────────────────────────── 选择模式 / 批量操作 ─────────────────────────────
+
+    /** 是否处于多选模式（长按任意插件进入）。 */
+    var selectionMode by mutableStateOf(false)
+        private set
+
+    var selectedIds by mutableStateOf<Set<String>>(emptySet())
+        private set
+
+    /** 待导出的插件 ID；UI 拿到后弹系统「保存文件」，再回调 exportTo()。 */
+    var pendingExportIds by mutableStateOf<List<String>?>(null)
+
+    fun enterSelection(pluginId: String) {
+        selectionMode = true
+        selectedIds = selectedIds + pluginId
+    }
+
+    fun toggleSelection(pluginId: String) {
+        selectedIds = if (pluginId in selectedIds) selectedIds - pluginId else selectedIds + pluginId
+    }
+
+    fun selectAll() {
+        selectedIds = plugins.map { it.id }.toSet()
+    }
+
+    fun clearSelection() {
+        selectionMode = false
+        selectedIds = emptySet()
+    }
+
+    fun batchSetEnabled(enabled: Boolean) {
+        val ids = selectedIds.toList()
+        if (ids.isEmpty()) return
+        scope.launch {
+            val res = withContext(Dispatchers.IO) { ScriptData.setPluginsEnabled(context, ids, enabled) }
+            res.fold(
+                onSuccess = { toast(if (enabled) "已启用 $it 个插件" else "已停用 $it 个插件") },
+                onFailure = { toast((if (enabled) "启用" else "停用") + "失败：" + (it.message ?: "未知原因")) },
+            )
+            clearSelection()
+            refresh()
+        }
+    }
+
+    fun batchSetPinned(pinned: Boolean) {
+        val ids = selectedIds.toList()
+        if (ids.isEmpty()) return
+        scope.launch {
+            val res = withContext(Dispatchers.IO) { ScriptData.setPinned(context, ids, pinned) }
+            res.fold(
+                onSuccess = { toast(if (pinned) "已置顶 $ids.size 个插件" else "已取消置顶") },
+                onFailure = { toast("置顶失败：" + (it.message ?: "未知原因")) },
+            )
+            clearSelection()
+            refresh()
+        }
+    }
+
+    fun requestExport() {
+        val ids = selectedIds.toList()
+        if (ids.isEmpty()) return
+        pendingExportIds = ids
+    }
+
+    fun exportTo(uri: android.net.Uri) {
+        val ids = pendingExportIds ?: return
+        pendingExportIds = null
+        scope.launch {
+            val res = withContext(Dispatchers.IO) { ScriptData.exportPlugins(context, ids, uri) }
+            res.fold(
+                onSuccess = { toast("已导出 $it 个插件") },
+                onFailure = { toast("导出失败：" + (it.message ?: "未知原因")) },
+            )
+            clearSelection()
+            refresh()
+        }
+    }
+
+    fun batchDelete() {
+        val ids = selectedIds.toList()
+        if (ids.isEmpty()) return
+        scope.launch {
+            val res = withContext(Dispatchers.IO) { ScriptData.deletePlugins(context, ids) }
+            res.fold(
+                onSuccess = { toast("已删除 $it 个插件") },
+                onFailure = { toast("删除失败：" + (it.message ?: "未知原因")) },
+            )
+            clearSelection()
+            refresh()
+        }
+    }
+
+    fun rename(pluginId: String, newName: String) {
+        scope.launch {
+            val res = withContext(Dispatchers.IO) { ScriptData.renamePlugin(context, pluginId, newName) }
+            res.fold(
+                onSuccess = { toast("已重命名为 $it") },
+                onFailure = { toast("重命名失败：" + (it.message ?: "未知原因")) },
+            )
+            refresh()
+        }
+    }
+
     fun toast(message: String) {
         runCatching { Toast.makeText(context, message, Toast.LENGTH_SHORT).show() }
     }

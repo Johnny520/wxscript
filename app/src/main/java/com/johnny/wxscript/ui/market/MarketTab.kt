@@ -52,7 +52,11 @@ import kotlinx.coroutines.withContext
  * 拉取失败时给出可操作入口（重试 / 换服务器），不显示假数据。
  */
 @Composable
-fun MarketTab(onOpenDetail: (String) -> Unit) {
+fun MarketTab(
+    onOpenDetail: (String) -> Unit,
+    onOpenNotifications: () -> Unit,
+    onOpenUpload: () -> Unit,
+) {
     val context = LocalContext.current
 
     var serverUrl by remember { mutableStateOf(MarketData.serverUrl(context)) }
@@ -110,6 +114,8 @@ fun MarketTab(onOpenDetail: (String) -> Unit) {
             } ?: run {
                 Text("正在探测市场服务器…", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
             }
+            TextButton(onClick = onOpenNotifications) { Text("通知") }
+            TextButton(onClick = onOpenUpload) { Text("发布") }
             TextButton(onClick = { serverDialog = true }) { Text("服务器") }
         }
         Text(
