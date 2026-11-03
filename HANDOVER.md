@@ -434,6 +434,23 @@ P3 的两项遗留（市场完整化、API 文档完整版）已在 P4 完成，
 31. 语法高亮只改颜色不改字符时，`OffsetMapping.Identity` 是唯一安全选择；一旦替换字符（如补空格），选区/光标/IME 全会错位。
 32. 行号栏不要和编辑器共享同一个 `ScrollState`（两个 scrollable 会抢滚动），读 `scroll.value` 自己算位移更稳，且只渲染可见行。
 
+## 12. P4 第二批（2026-11-03，v1.3.0 / tag v4）
+
+| 内容 | 说明 |
+|---|---|
+| 插件管理器 | 长按行进入多选：全选 / 批量启用 / 批量停用 / 置顶 / 取消置顶 / 导出 zip（SAF 保存）/ 批量删除（二次确认）；行尾「更多」菜单：README / 插件设置 / 重命名 / 复制插件 ID / 卸载 |
+| 数据层 | `ScriptData` 新增 renamePlugin / setPinned / setPluginsEnabled / deletePlugins / exportPlugins（全部走 `ScriptPluginManager` 的加锁事务接口） |
+| 市场社交 | 详情页点赞 / 关注（状态回读）、评论分段（列表 / 发表 / 回复 / 删除）、身份不可用时禁用并提示去诊断页；`MarketSocial` 统一封装身份与四个社交接口 |
+| 通知中心 | `MarketNotificationsScreen`：未读数、全部已读、点条目跳插件详情 |
+| 发布 | `MarketUploadScreen`：选本地插件 → 填市场名与更新说明 → `collectUploadPackage` + `upload`；有 ownerToken 时按更新提交，结果显示远程 ID 与审核状态 |
+| 路由 | `WxRoute` 新增 MarketNotifications / MarketUpload，市场页右上角「通知」「发布」入口 |
+
+### 本轮新增的坑
+
+33. `ScriptPlugin.displayName` 是 `String?`，`renamePlugin` 拿显示名时必须回落 `plugin.name`，否则返回类型不匹配直接编译失败。
+34. 批量启停逐个调用 `setPluginEnabled`：部分失败无法回滚，必须把「成功 N / 失败 M」如实报给用户，不能伪装成功。
+35. 社交接口都依赖 `WeChatApis.account()`；账号未就绪时要**禁用按钮 + 说明原因**，否则用户只会看到「点了没反应」。
+
 ### 尚未完成
 
 - **P5 剥离 WCX**：需仓库 owner 确认时机（WCX 侧删 `h/Hchat` 162 文件、`me/hd` 10、`scripting_*`、`ScriptSubPages/ScriptsPager`、`HchatScriptBootstrap`、相关 nav/loader/proguard）。本窗口按约定**不动 WCX**。
