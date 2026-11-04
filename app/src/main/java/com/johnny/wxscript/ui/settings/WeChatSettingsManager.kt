@@ -9,6 +9,7 @@ import dev.ujhhgtg.reflekt.reflekt
 import dev.ujhhgtg.reflekt.utils.createInstance
 import dev.ujhhgtg.reflekt.utils.toClass
 import com.johnny.wxscript.loader.utils.ParcelableFixer
+import com.johnny.wxscript.utils.WeLogger
 import com.johnny.wxscript.utils.hookAfterDirectly
 import com.johnny.wxscript.utils.hookBeforeDirectly
 import com.johnny.wxscript.utils.reflection.buildClass
@@ -39,6 +40,8 @@ class WeChatSettingsManager(
     private val mGetSwitchProperty: String
 ) {
     private val registeredItems = CopyOnWriteArrayList<ItemRegistration>()
+
+    private val TAG = "WeChatSettingsManager"
     private val stringPool = ConcurrentHashMap<Int, String>()
     private var dynamicResIdCounter = -2000
     private var itemIndexCounter = 0
@@ -132,13 +135,18 @@ class WeChatSettingsManager(
             arrayOf(markerInterface)
         ).buildClass(handler)
 
+        // 微信各版本的分组类方法名不同，找不到就跳过这一步（provider 里注册的 class 仍然会被实例化）。
         spec.childClass?.let { childClass ->
             val resolvedPage = spec.pageClass ?: proxyClass
-            childClass.reflekt()
-                .firstMethod { returnType = classSettingLocation }
-                .hookBeforeDirectly {
-                    result = classSettingLocation.createInstance(resolvedPage, proxyClass)
-                }
+            runCatching {
+                childClass.reflekt()
+                    .firstMethod { returnType = classSettingLocation }
+                    .hookBeforeDirectly {
+                        result = classSettingLocation.createInstance(resolvedPage, proxyClass)
+                    }
+            }.onFailure {
+                WeLogger.w(TAG, "childClass 分组注入跳过（${childClass.simpleName}）：${it.message}")
+            }
         }
 
         registeredItems.add(ItemRegistration(spec, proxyClass))
@@ -186,6 +194,7 @@ class WeChatSettingsManager(
                 result = mutMap
             }
 
+        runCatching {
         classBaseSettingPrefUI.reflekt()
             .firstMethod { name = "superImportUIComponents" }
             .hookAfterDirectly {
@@ -210,6 +219,11 @@ class WeChatSettingsManager(
                 }
             }
 
+        }.onFailure {
+            WeLogger.w(TAG, "superImportUIComponents 注入跳过：${it.message}")
+        }
+
+        runCatching {
         classBaseSettingUI.reflekt()
             .firstMethod { name = "onDestroy" }
             .hookAfterDirectly {
@@ -219,6 +233,9 @@ class WeChatSettingsManager(
                 contextGetStringUnhook?.unhook(); contextGetStringUnhook = null
                 resourcesGetStringUnhook?.unhook(); resourcesGetStringUnhook = null
             }
+        }.onFailure {
+            WeLogger.w(TAG, "onDestroy 解绑注入跳过：${it.message}")
+        }
         }
     }
 }
