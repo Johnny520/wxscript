@@ -2,6 +2,7 @@ package com.johnny.wxscript.features.hchat
 
 import android.os.Handler
 import android.os.HandlerThread
+import com.johnny.wxscript.features.api.ui.WeSettingsInjector
 import com.johnny.wxscript.utils.HostInfo
 import com.johnny.wxscript.utils.WeLogger
 import com.johnny.wxscript.utils.reflection.ClassLoaders
@@ -201,6 +202,17 @@ object HchatScriptBootstrap {
                 .onFailure { WeLogger.e(TAG, "markDexBridgeReady 失败", it) }
 
             scheduleReadyWatchdog()
+
+            // 微信设置页入口：DexKit 查询较重，单独线程做，失败不影响脚本功能。
+            val entryThread = HandlerThread("WxScript-SettingsEntry").apply { start() }
+            Handler(entryThread.looper).postDelayed({
+                runCatching { WeSettingsInjector.install(hostContext, dexKitBridge, hostClassLoader) }
+                    .onSuccess { ok ->
+                        status += if (ok) " / 设置入口已注入" else " / 设置入口未注入：" + (WeSettingsInjector.lastError ?: "未知原因")
+                    }
+                    .onFailure { WeLogger.e(TAG, "设置入口注入失败", it) }
+                runCatching { entryThread.quitSafely() }
+            }, 3_000L)
 
             WeLogger.i(TAG, "脚本子系统已安装（WechatApiFeature + ScriptPluginFeature + markDexBridgeReady）")
 

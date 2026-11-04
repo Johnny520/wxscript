@@ -13,8 +13,9 @@
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
 
+        <!-- 模块自身界面：只显示激活信息（框架 / 版本 / 作用域），不承载脚本功能 -->
         <activity
-            android:name=".activity.SettingsActivity"
+            android:name=".activity.MainActivity"
             android:exported="true"
             android:label="@string/app_name"
             android:theme="@android:style/Theme.Material.Light.NoActionBar">
@@ -24,6 +25,13 @@
                 <category android:name="de.robv.android.xposed.category.MODULE_SETTINGS" />
             </intent-filter>
         </activity>
+
+        <!-- 脚本设置页：只在微信进程内由 ActivityProxy 拉起（代理 + setClassName），不对外导出 -->
+        <activity
+            android:name=".activity.SettingsActivity"
+            android:exported="false"
+            android:label="@string/app_name"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
 
         <meta-data
             android:name="xposedmodule"
