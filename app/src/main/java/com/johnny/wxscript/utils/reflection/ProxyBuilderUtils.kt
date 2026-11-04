@@ -1,6 +1,7 @@
 package com.johnny.wxscript.utils.reflection
 
 import com.android.dx.stock.ProxyBuilder
+import com.johnny.wxscript.utils.fs.KnownPaths
 import com.johnny.wxscript.utils.fs.createDirsSafe
 import com.johnny.wxscript.utils.hookAfterDirectly
 import dev.ujhhgtg.reflekt.reflekt
