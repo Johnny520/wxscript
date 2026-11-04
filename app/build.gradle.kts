@@ -19,8 +19,8 @@ android {
         applicationId = "com.johnny.wxscript"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 4
-        versionName = "v1.3.0"
+        versionCode = 5
+        versionName = "v1.5.0"
 
         buildConfigField("String", "TAG", "\"WxScript\"")
         buildConfigField("String", "HOST_PACKAGE", "\"com.tencent.mm\"")
@@ -134,6 +134,10 @@ dependencies {
     implementation(libs.compose.material.icons.extended)
 
     implementation(libs.dexkit)
+    // 模块自身进程绑定 LSPosed 服务（显示框架版本/作用域），与使用 legacy API 不冲突
+    implementation("io.github.libxposed:service:102.0.0")
+    // 代理微信设置页的抽象设置项（java.lang.reflect.Proxy 只能代理接口）
+    implementation("com.linkedin.dexmaker:dexmaker:2.28.5")
     // 只用到 miuix 的 theme / basic / window（VoiceForwardMiuixDialog 的 WindowDialog）。
     // miuix-blur 的 minSdk 是 33，引进来会拖高本项目 minSdk，因此不引。
     implementation(libs.miuix.ui)
