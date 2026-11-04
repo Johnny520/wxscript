@@ -63,3 +63,12 @@
 -dontwarn java.beans.**
 -dontwarn com.highcapable.kavaref.**
 -dontwarn java.lang.invoke.**
+
+# ── libxposed 102 ──
+-dontwarn io.github.libxposed.annotation.**
+-adaptresourcefilecontents META-INF/xposed/java_init.list
+-keep,allowoptimization,allowobfuscation public class * extends io.github.libxposed.api.XposedModule {
+    public <init>();
+}
+# 兼容层类会被运行时按名/按签名引用（脚本 ABI 与反射）
+-keep class com.johnny.wxscript.xposed.** { *; }

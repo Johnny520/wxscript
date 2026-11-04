@@ -1,7 +1,7 @@
 package h.Hchat.hooks.api.sns
 
 import android.content.Context
-import de.robv.android.xposed.XC_MethodHook
+import com.johnny.wxscript.xposed.XC_MethodHook
 import h.Hchat.dexkit.DexMethodCache
 import h.Hchat.hooks.core.HookRegistry
 import h.Hchat.utils.KavaReflector
