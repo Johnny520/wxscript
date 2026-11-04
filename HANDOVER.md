@@ -473,6 +473,34 @@ P3 的两项遗留（市场完整化、API 文档完整版）已在 P4 完成，
 37. legacy API 下模块进程拿不到微信进程的 SharedPreferences/MMKV（不同 uid），「是否激活」只能走 libxposed `service` 绑定。
 38. 微信设置项是抽象类，`java.lang.reflect.Proxy` 只能代理接口，必须用 dexmaker 的 `ProxyBuilder` 生成子类，并在构造器 after 里 `setInvocationHandler`。
 
+## 14. libxposed API 102 迁移（2026-11-04，v1.6.0 / tag v6）
+
+动机：102 起框架在 classloader 层封禁 legacy `de.robv.android.xposed`，模块必须走 libxposed。
+
+做法：
+| 步骤 | 说明 |
+|---|---|
+| 兼容层 | 新增 `com.johnny.wxscript.xposed` 包：`XC_MethodHook`（Java，保留 legacy 平台类型语义 + `setObjectExtra`/`hookedMethod`）、`XposedBridge`（log / hookMethod / hookAllMethods / hookAllConstructors / invokeOriginalMethod）、`XposedHelpers`（findClass / findAndHookMethod）、`callbacks.XCallback`、`XposedRuntime`（持有 `XposedInterface`） |
+| 批量替换 | `assemble.py` 在装配后把源码里的 `de.robv.android.xposed.` 统一替换成 `com.johnny.wxscript.xposed.`（本轮 35 个文件） |
+| 新入口 | `entry/LibXposedEntry` 继承 `io.github.libxposed.api.XposedModule`，在 `onPackageLoaded` 里 `XposedRuntime.attach(this, param.defaultClassLoader)`，再 hook `Instrumentation.callApplicationOnCreate`（与 legacy 入口同一时机） |
+| 声明 | `app/src/main/resources/META-INF/xposed/{module.prop,java_init.list,scope.list}`：`targetApiVersion=102`、入口类、作用域 `com.tencent.mm` |
+| 清理 | 删除 `assets/xposed_init` 与旧 `XposedEntry.kt`（否则框架会按 legacy 模块处理） |
+| 依赖 | `compileOnly("io.github.libxposed:api:102.0.0")`，移除内置 `xposed-api-82.jar` |
+| R8 | `-keep ... extends io.github.libxposed.api.XposedModule`、`-adaptresourcefilecontents META-INF/xposed/java_init.list`、keep 兼容层 |
+
+关键 API 对应：
+- `XC_MethodHook.before/after` → `XposedInterface.Hooker.intercept(Chain)`（before 短路用 `param.returnEarly`）
+- `XposedBridge.invokeOriginalMethod` → `XposedInterface.getInvoker(method).invokeSpecial(thisObject, args)`
+- `hookMethod` 返回的 `Unhook` → `HookHandle.unhook()`
+- 优先级：legacy `PRIORITY_LOWEST=-10000` → libxposed `0`（越大越先执行）
+
+新增的坑：
+
+39. 在 Kotlin 里声明 `MethodHookParam.thisObject: Any?` 会让迁移过来的两百多处 `param.thisObject.xxx` 全部报「Only safe call」；legacy 是 Java 平台类型，所以兼容层必须用 Java 写。
+40. `XposedBridge.hookAllMethods/hookAllConstructors` 在 legacy 返回 `Set<Unhook>`，不能实现成 `Unit`（Hchat 侧会把返回值存起来统一 unhook）。
+41. `XCallback` 的 legacy 路径是 `...xposed.callbacks.XCallback`，兼容层必须放在 `callbacks` 子包，否则 import 替换后找不到。
+42. 102 下如果还留着 `assets/xposed_init`，框架会按 legacy 模块加载并封禁对应 API —— 迁移时必须同时删掉它和旧入口类。
+
 ### 尚未完成
 
 - **P5 剥离 WCX**：需仓库 owner 确认时机（WCX 侧删 `h/Hchat` 162 文件、`me/hd` 10、`scripting_*`、`ScriptSubPages/ScriptsPager`、`HchatScriptBootstrap`、相关 nav/loader/proguard）。本窗口按约定**不动 WCX**。

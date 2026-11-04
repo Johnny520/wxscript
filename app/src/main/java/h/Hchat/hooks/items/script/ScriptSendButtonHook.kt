@@ -12,7 +12,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.widget.TextView
-import de.robv.android.xposed.XC_MethodHook
+import com.johnny.wxscript.xposed.XC_MethodHook
 import h.Hchat.hooks.api.core.WeChatApis
 import h.Hchat.hooks.api.message.OutgoingTextDecoratorRegistry
 import h.Hchat.hooks.core.FeatureContext

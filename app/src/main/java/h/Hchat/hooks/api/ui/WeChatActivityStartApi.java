@@ -10,7 +10,7 @@ import h.Hchat.utils.KavaReflector;
 import java.lang.reflect.Method;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-import de.robv.android.xposed.XC_MethodHook;
+import com.johnny.wxscript.xposed.XC_MethodHook;
 
 /**
  * 微信 Activity 启动监听 API。
