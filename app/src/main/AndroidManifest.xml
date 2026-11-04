@@ -3,6 +3,10 @@
 
     <queries>
         <package android:name="com.tencent.mm" />
+        <!-- 跳转 LSPosed 管理器需要包可见性（Android 11+） -->
+        <package android:name="org.lsposed.manager" />
+        <package android:name="com.lsposed.manager" />
+        <package android:name="io.github.lsposed.manager" />
     </queries>
 
     <application

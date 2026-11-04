@@ -205,14 +205,26 @@ object HchatScriptBootstrap {
 
             // 微信设置页入口：DexKit 查询较重，单独线程做，失败不影响脚本功能。
             val entryThread = HandlerThread("WxScript-SettingsEntry").apply { start() }
-            Handler(entryThread.looper).postDelayed({
-                runCatching { WeSettingsInjector.install(hostContext, dexKitBridge, hostClassLoader) }
-                    .onSuccess { ok ->
-                        status += if (ok) " / 设置入口已注入" else " / 设置入口未注入：" + (WeSettingsInjector.lastError ?: "未知原因")
+            val entryHandler = Handler(entryThread.looper)
+            // DexKit 刚建好时解析可能还没热身，失败就隔 15s 再试，最多 3 次。
+            val entryTask = object : Runnable {
+                private var attempt = 0
+                override fun run() {
+                    attempt++
+                    val ok = runCatching {
+                        WeSettingsInjector.install(hostContext, dexKitBridge, hostClassLoader)
+                    }.onFailure { WeLogger.e(TAG, "设置入口注入异常（第 $attempt 次）", it) }
+                        .getOrDefault(false)
+                    if (!ok && attempt < 3) {
+                        WeLogger.w(TAG, "设置入口注入失败（第 $attempt 次），稍后重试：" + (WeSettingsInjector.lastError ?: "未知原因"))
+                        entryHandler.postDelayed(this, 15_000L)
+                        return
                     }
-                    .onFailure { WeLogger.e(TAG, "设置入口注入失败", it) }
-                runCatching { entryThread.quitSafely() }
-            }, 3_000L)
+                    status += if (ok) " / 设置入口已注入" else " / 设置入口失败：" + (WeSettingsInjector.lastError ?: "未知原因")
+                    runCatching { entryThread.quitSafely() }
+                }
+            }
+            entryHandler.postDelayed(entryTask, 3_000L)
 
             WeLogger.i(TAG, "脚本子系统已安装（WechatApiFeature + ScriptPluginFeature + markDexBridgeReady）")
 

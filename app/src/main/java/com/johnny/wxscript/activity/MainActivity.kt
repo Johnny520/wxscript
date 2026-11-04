@@ -75,7 +75,12 @@ class MainActivity : ComponentActivity() {
 
 private const val GITHUB_URL = "https://github.com/Johnny520/wxscript"
 private const val AFDIAN_URL = "https://afdian.com/a/Johnny520"
-private const val LSPOSED_PACKAGE = "org.lsposed.manager"
+/** LSPosed 管理器可能的包名（官方 / 魔改 / 隐藏管理器后自定义的包名无法枚举）。 */
+private val LSPOSED_PACKAGES = listOf(
+    "org.lsposed.manager",
+    "com.lsposed.manager",
+    "io.github.lsposed.manager",
+)
 
 private data class HostApp(val installed: Boolean, val versionName: String, val versionCode: Long)
 
@@ -311,10 +316,28 @@ private fun openUrl(context: android.content.Context, url: String) {
 }
 
 private fun openLsposed(context: android.content.Context) {
-    val intent = Intent(Intent.ACTION_MAIN).apply {
-        setPackage(LSPOSED_PACKAGE)
-        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    val pm = context.packageManager
+    for (pkg in LSPOSED_PACKAGES) {
+        // 1) 优先用启动 Intent（ACTION_MAIN 必须带 CATEGORY_LAUNCHER 才能匹配到桌面入口）
+        pm.getLaunchIntentForPackage(pkg)?.let { launch ->
+            launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (runCatching { context.startActivity(launch) }.isSuccess) return
+        }
+        // 2) 兜底：自己拼一个带 CATEGORY_LAUNCHER 的 Intent
+        val fallback = Intent(Intent.ACTION_MAIN).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
+            setPackage(pkg)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        if (pm.resolveActivity(fallback, 0) != null &&
+            runCatching { context.startActivity(fallback) }.isSuccess
+        ) {
+            return
+        }
     }
-    runCatching { context.startActivity(intent) }
-        .onFailure { Toast.makeText(context, "未找到 LSPosed 管理器", Toast.LENGTH_SHORT).show() }
+    Toast.makeText(
+        context,
+        "没找到 LSPosed 管理器：可能被隐藏了（LSPosed 里「隐藏应用」后包名会变），请从系统设置或快捷方式打开",
+        Toast.LENGTH_LONG,
+    ).show()
 }

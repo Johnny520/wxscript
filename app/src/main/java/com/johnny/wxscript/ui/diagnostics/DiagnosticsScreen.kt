@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import com.johnny.wxscript.features.hchat.HchatScriptBootstrap
 import com.johnny.wxscript.features.hchat.ScriptFeaturesInstaller
 import com.johnny.wxscript.ui.components.DotState
+import com.johnny.wxscript.features.api.ui.WeSettingsInjector
 import com.johnny.wxscript.ui.market.MarketData
 import com.johnny.wxscript.ui.components.StatusDot
 import com.johnny.wxscript.ui.script.ScriptData
@@ -311,6 +312,16 @@ private fun collectDiagnostics(context: android.content.Context): List<DiagItem>
         } else {
             "${plugins.size} 个（启用 $enabledCount · 运行中 $runningCount · 市场安装 ${plugins.count { it.fromMarket }}）"
         },
+    )
+
+    items += DiagItem(
+        "微信设置入口",
+        when {
+            WeSettingsInjector.installedKey != null -> DotState.OK
+            WeSettingsInjector.status.startsWith("失败") -> DotState.FAIL
+            else -> DotState.RUNNING
+        },
+        WeSettingsInjector.status,
     )
 
     val serverUrl = runCatching { MarketData.serverUrl(context) }.getOrDefault("")
