@@ -2,7 +2,10 @@ package com.johnny.wxscript.activity
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -10,6 +13,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,296 +29,464 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.AccessTime
+import androidx.compose.material.icons.filled.Android
+import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Update
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.johnny.wxscript.BuildConfig
 import com.johnny.wxscript.ui.HostLauncher
 import com.johnny.wxscript.ui.WxTheme
 import com.johnny.wxscript.utils.FrameworkStatus
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * 模块主界面（运行在 WxScript 自己的进程里）。
  *
- * 这里**只放激活信息**：框架是否绑定、框架版本与 API、作用域是否包含微信、
- * 模块/微信/系统版本，以及「在微信中打开设置」的入口。
- *
- * 脚本插件界面（4 个 Tab）全部在微信进程内渲染，从微信「我 → 设置 → 微信脚本」进入，
- * 因为它依赖微信进程里的运行时（Xposed hook、微信 API、DexKit）。
+ * 只显示激活与环境信息，脚本 4 Tab 在微信进程内（微信 → 我 → 设置 → 微信脚本）。
  */
 class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         FrameworkStatus.register()
-        setContent {
-            WxTheme { HomeScreen() }
-        }
+        setContent { WxTheme { HomeScreen() } }
     }
 }
 
+// ── 配色（与设计稿一致：绿主色 + 浅灰背景 + pastel 卡片）──
+private val BG = Color(0xFFF2F5F8)
+private val GREEN = Color(0xFF07C160)
+private val CARD_WHITE = Color(0xFFFBFCFD)
+private val PINK_BG = Color(0xFFFFF2F2)
+private val PINK_FG = Color(0xFFE5484D)
+private val BLUE_BG = Color(0xFFEAF3FF)
+private val BLUE_FG = Color(0xFF3B82F6)
+private val GREEN_BG = Color(0xFFE8F7EE)
+private val PURPLE_BG = Color(0xFFF3EEFF)
+private val PURPLE_FG = Color(0xFF8B5CF6)
+private val TEXT_MAIN = Color(0xFF1A1A1A)
+private val TEXT_SUB = Color(0xFF8A8F99)
+
 private const val GITHUB_URL = "https://github.com/Johnny520/wxscript"
 private const val AFDIAN_URL = "https://afdian.com/a/Johnny520"
-private const val LSPOSED_PACKAGE = "org.lsposed.manager"
+private const val DOCS_URL = "https://github.com/Johnny520/wxscript/blob/main/docs/js-scripting/README.md"
 
-private data class HostApp(val installed: Boolean, val versionName: String, val versionCode: Long)
+/** LSPosed 管理器可能的包名（官方 / 魔改；隐藏管理器后自定义的包名无法枚举）。 */
+private val LSPOSED_PACKAGES = listOf(
+    "org.lsposed.manager",
+    "com.lsposed.manager",
+    "io.github.lsposed.manager",
+)
+
+private data class HostApp(val installed: Boolean, val versionName: String, val versionCode: Long, val lastUpdate: Long)
 
 @Composable
 private fun HomeScreen() {
     val context = androidx.compose.ui.platform.LocalContext.current
     val status by FrameworkStatus.state
     val host = remember { readHostApp(context) }
-    val scheme = MaterialTheme.colorScheme
+    var menuOpen by remember { mutableStateOf(false) }
+    var launcherHidden by remember { mutableStateOf(!isLauncherEnabled(context)) }
 
     Column(
         Modifier
             .fillMaxSize()
+            .background(BG)
             .verticalScroll(rememberScrollState())
-            .padding(bottom = 24.dp)
+            .padding(horizontal = 16.dp)
+            .padding(bottom = 28.dp),
     ) {
-        // ── 顶部渐变头 ──
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .background(
-                    Brush.linearGradient(
-                        listOf(scheme.primary, scheme.primary.copy(alpha = 0.72f), scheme.tertiary)
-                    )
-                )
-                .padding(horizontal = 20.dp, vertical = 26.dp)
+        // ── 顶部标题 ──
+        Row(
+            Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        Modifier
-                            .size(46.dp)
-                            .background(Color.White.copy(alpha = 0.22f), RoundedCornerShape(14.dp)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text("W", style = MaterialTheme.typography.headlineSmall, color = Color.White, fontWeight = FontWeight.Bold)
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("WxScript", style = MaterialTheme.typography.headlineSmall, color = Color.White, fontWeight = FontWeight.Bold)
-                        Text(
-                            "微信脚本模块 · ${BuildConfig.VERSION_NAME}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.85f),
-                        )
-                    }
-                    StatusPill(bound = status.bound)
+            Text(
+                "WxScript",
+                color = GREEN,
+                fontSize = 26.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "v${BuildConfig.VERSION_NAME.removePrefix("v")}",
+                color = TEXT_SUB,
+                fontSize = 12.sp,
+                modifier = Modifier.weight(1f).padding(top = 6.dp),
+            )
+            Surface(
+                shape = CircleShape,
+                color = Color.White,
+                modifier = Modifier.size(34.dp).clickable { menuOpen = true },
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Filled.MoreHoriz, contentDescription = "更多", tint = TEXT_SUB, modifier = Modifier.size(20.dp))
                 }
             }
         }
 
-        // ── 框架状态 ──
-        Card(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 14.dp),
-            colors = CardDefaults.cardColors(containerColor = scheme.surfaceVariant.copy(alpha = 0.45f)),
+        // ── 激活状态卡 ──
+        PastelCard(
+            bg = if (status.bound) GREEN_BG else PINK_BG,
+            modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
         ) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        if (status.bound) Icons.Filled.CheckCircle else Icons.Filled.Warning,
-                        contentDescription = null,
-                        tint = if (status.bound) Color(0xFF2E7D32) else scheme.error,
-                    )
-                    Spacer(Modifier.width(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircleIcon(
+                    icon = if (status.bound) Icons.Filled.CheckCircle else Icons.Filled.Warning,
+                    tint = if (status.bound) GREEN else PINK_FG,
+                    bg = if (status.bound) Color(0xFFD6F2E0) else Color(0xFFFFDCDC),
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(
                         if (status.bound) "已激活" else "未激活",
-                        style = MaterialTheme.typography.titleMedium,
+                        color = if (status.bound) Color(0xFF0B7A3E) else PINK_FG,
                         fontWeight = FontWeight.SemiBold,
+                        fontSize = 15.sp,
+                    )
+                    Text(
+                        if (status.bound) {
+                            "${status.frameworkName.ifBlank { "LSPosed" }} ${status.frameworkVersion} · API ${status.apiVersion}" +
+                                if (status.scopeActive) " · 已勾选微信" else " · 未勾选微信"
+                        } else {
+                            "请在 Xposed 框架中勾选并重启生效"
+                        },
+                        color = if (status.bound) Color(0xFF0B7A3E).copy(alpha = 0.8f) else PINK_FG.copy(alpha = 0.85f),
+                        fontSize = 12.sp,
                     )
                 }
-                Text(
-                    if (status.bound) {
-                        "已与框架建立连接，微信内的脚本功能可用。"
-                    } else {
-                        "没有连到 LSPosed 服务：请在 LSPosed 中启用本模块、勾选「微信」作用域，然后重启微信。"
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = scheme.onSurfaceVariant,
-                )
-                HorizontalDivider()
-                InfoRow("框架", status.frameworkName.ifBlank { "—" } + if (status.frameworkVersion.isNotBlank()) " ${status.frameworkVersion}" else "")
-                InfoRow("框架 API", if (status.apiVersion > 0) "${status.apiVersion}" else "—")
-                InfoRow(
-                    "作用域",
-                    when {
-                        !status.bound -> "—"
-                        status.scopeActive -> "已勾选微信"
-                        else -> "未勾选微信（需要勾选后重启微信）"
-                    },
-                )
             }
         }
 
-        // ── 环境信息 ──
-        Card(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 12.dp),
-            colors = CardDefaults.cardColors(containerColor = scheme.surfaceVariant.copy(alpha = 0.45f)),
+        // ── 两个并排卡 ──
+        Row(
+            Modifier.fillMaxWidth().padding(top = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("环境", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                InfoRow("模块版本", "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
-                InfoRow(
-                    "微信版本",
-                    if (host.installed) "${host.versionName} (${host.versionCode})" else "未安装",
-                )
-                InfoRow("系统", "Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})")
-                InfoRow("设备", "${Build.MANUFACTURER} ${Build.MODEL}")
+            PastelCard(bg = BLUE_BG, modifier = Modifier.weight(1f), onClick = { openUrl(context, GITHUB_URL) }) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircleIcon(Icons.Filled.PlayArrow, BLUE_FG, Color(0xFFD6E8FF))
+                    Spacer(Modifier.width(8.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("GitHub 仓库", color = TEXT_MAIN, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1)
+                        Text("获取最新版本", color = TEXT_SUB, fontSize = 11.sp, maxLines = 1)
+                    }
+                }
+            }
+            PastelCard(bg = GREEN_BG, modifier = Modifier.weight(1f), onClick = { openUrl(context, AFDIAN_URL) }) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircleIcon(Icons.Filled.Chat, GREEN, Color(0xFFD6F2E0))
+                    Spacer(Modifier.width(8.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("支持作者", color = TEXT_MAIN, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1)
+                        Text("爱发电赞助", color = TEXT_SUB, fontSize = 11.sp, maxLines = 1)
+                    }
+                }
             }
         }
 
-        // ── 操作 ──
-        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(
+        // ── 开发文档 ──
+        PastelCard(
+            bg = PURPLE_BG,
+            modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+            onClick = { openUrl(context, DOCS_URL) },
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircleIcon(Icons.Filled.Description, PURPLE_FG, Color(0xFFE6DBFF))
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("开发文档", color = TEXT_MAIN, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Text("查看脚本编写指南与 API 接口说明", color = TEXT_SUB, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null, tint = Color(0xFFB9BEC7))
+            }
+        }
+
+        GroupTitle("快捷操作")
+
+        SectionCard {
+            ActionRow(
+                icon = Icons.Filled.PlayArrow,
+                title = "跳转至宿主",
+                subtitle = "在微信中打开脚本设置（微信进程内）",
                 onClick = {
                     val ok = HostLauncher.openSettingsInHost(context)
                     if (!ok) Toast.makeText(context, "启动失败：请确认微信已安装且模块已激活", Toast.LENGTH_LONG).show()
                 },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Icon(Icons.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("在微信中打开设置")
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = { openLsposed(context) },
-                    modifier = Modifier.weight(1f),
-                ) { Text("LSPosed") }
-                OutlinedButton(
-                    onClick = {
-                        val text = buildStatusText(status, host)
-                        copyText(context, text)
-                        Toast.makeText(context, "已复制状态信息", Toast.LENGTH_SHORT).show()
-                    },
-                    modifier = Modifier.weight(1f),
-                ) { Text("复制状态") }
-            }
-        }
-
-        // ── 关于 ──
-        Card(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 14.dp),
-            colors = CardDefaults.cardColors(containerColor = scheme.surfaceVariant.copy(alpha = 0.45f)),
-        ) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("关于作者", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                Text("Johnny520", style = MaterialTheme.typography.bodyMedium)
-                Text(
-                    "独立微信脚本模块：BeanShell / JS 双引擎、插件热重载、在线插件市场。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = scheme.onSurfaceVariant,
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton(onClick = { openUrl(context, GITHUB_URL) }) { Text("GitHub") }
-                    TextButton(onClick = { openUrl(context, AFDIAN_URL) }) { Text("支持作者") }
-                }
-            }
-        }
-
-        // ── 提示 ──
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 12.dp),
-            verticalAlignment = Alignment.Top,
-        ) {
-            Icon(Icons.Filled.Info, contentDescription = null, modifier = Modifier.size(16.dp), tint = scheme.onSurfaceVariant)
-            Spacer(Modifier.width(8.dp))
-            Text(
-                "脚本插件界面在微信内：微信 → 我 → 设置 → 微信脚本。\n" +
-                    "那里才有微信进程的运行时（插件加载、微信 API、DexKit）。",
-                style = MaterialTheme.typography.labelSmall,
-                color = scheme.onSurfaceVariant,
+            )
+            Divider()
+            ActionRow(
+                icon = if (launcherHidden) Icons.Filled.Visibility else Icons.Filled.VisibilityOff,
+                title = if (launcherHidden) "恢复桌面图标" else "隐藏桌面图标",
+                subtitle = if (launcherHidden) "从 LSPosed 打开本模块后点这里恢复" else "从桌面启动器中移除该应用图标",
+                onClick = {
+                    val wantHidden = !launcherHidden
+                    if (setLauncherVisible(context, !wantHidden)) {
+                        launcherHidden = wantHidden
+                        Toast.makeText(
+                            context,
+                            if (wantHidden) "已隐藏桌面图标（可从 LSPosed 模块页进入本界面）" else "已恢复桌面图标",
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    } else {
+                        Toast.makeText(context, "操作失败：系统不允许修改组件状态", Toast.LENGTH_SHORT).show()
+                    }
+                },
+            )
+            Divider()
+            ActionRow(
+                icon = Icons.Filled.Update,
+                title = "打开 LSPosed",
+                subtitle = "框架 ${status.frameworkName.ifBlank { "LSPosed" }} ${status.frameworkVersion}".trim(),
+                onClick = { openLsposed(context) },
             )
         }
-    }
-}
 
-@Composable
-private fun StatusPill(bound: Boolean) {
-    Surface(
-        color = if (bound) Color(0xFF2E7D32) else Color(0xFFB3261E),
-        shape = CircleShape,
-    ) {
-        Row(
-            Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(Modifier.size(6.dp).background(Color.White, CircleShape))
-            Spacer(Modifier.width(6.dp))
-            Text(if (bound) "已激活" else "未激活", color = Color.White, style = MaterialTheme.typography.labelSmall)
+        GroupTitle("环境信息")
+
+        SectionCard {
+            InfoRow(Icons.Filled.Info, "模块版本", "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+            Divider()
+            InfoRow(
+                Icons.Filled.Android,
+                "宿主版本",
+                if (host.installed) "${host.versionName} (${host.versionCode})" else "未安装",
+            )
+            Divider()
+            InfoRow(Icons.Filled.PhoneAndroid, "系统版本", "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
+            Divider()
+            InfoRow(
+                Icons.Filled.AccessTime,
+                "构建时间",
+                if (host.lastUpdate > 0) formatTime(host.lastUpdate) else "—",
+            )
+            Divider()
+            InfoRow(Icons.Filled.Download, "设备", "${Build.MANUFACTURER} ${Build.MODEL}")
         }
+
+        Text(
+            "本插件仅供学习交流使用，请勿用于非法用途",
+            color = Color(0xFFA9AEB8),
+            fontSize = 11.sp,
+            modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        )
+    }
+
+    if (menuOpen) {
+        AlertDialog(
+            onDismissRequest = { menuOpen = false },
+            title = { Text("WxScript") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("作者：Johnny520", style = MaterialTheme.typography.bodySmall)
+                    Text("独立微信脚本模块 · BeanShell / JS 双引擎", style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        "脚本界面在微信内：我 → 设置 → 微信脚本",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TEXT_SUB,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    menuOpen = false
+                    val text = buildStatusText(status, host, launcherHidden)
+                    copyText(context, text)
+                    Toast.makeText(context, "已复制状态信息", Toast.LENGTH_SHORT).show()
+                }) { Text("复制状态") }
+            },
+            dismissButton = { TextButton(onClick = { menuOpen = false }) { Text("关闭") } },
+        )
     }
 }
 
 @Composable
-private fun InfoRow(label: String, value: String) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-        Text(
-            label,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.width(80.dp),
-        )
-        Text(value, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+private fun GroupTitle(text: String) {
+    Text(
+        text,
+        color = GREEN,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 13.sp,
+        modifier = Modifier.padding(start = 4.dp, top = 18.dp, bottom = 8.dp),
+    )
+}
+
+@Composable
+private fun PastelCard(
+    bg: Color,
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+    content: @Composable () -> Unit,
+) {
+    val base = modifier
+        .background(bg, RoundedCornerShape(16.dp))
+        .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+        .padding(horizontal = 14.dp, vertical = 12.dp)
+    Box(base) { content() }
+}
+
+@Composable
+private fun SectionCard(content: @Composable () -> Unit) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(CARD_WHITE, RoundedCornerShape(16.dp))
+            .padding(vertical = 2.dp)
+    ) { content() }
+}
+
+@Composable
+private fun CircleIcon(icon: ImageVector, tint: Color, bg: Color) {
+    Box(
+        Modifier.size(34.dp).background(bg, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(18.dp))
     }
 }
 
-private fun readHostApp(context: android.content.Context): HostApp = runCatching {
-    val info = context.packageManager.getPackageInfo(BuildConfig.HOST_PACKAGE, 0)
-    HostApp(true, info.versionName.orEmpty(), info.longVersionCode)
-}.getOrDefault(HostApp(false, "", 0L))
+@Composable
+private fun ActionRow(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CircleIcon(icon, GREEN, GREEN_BG)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, color = TEXT_MAIN, fontSize = 14.sp)
+            Text(subtitle, color = TEXT_SUB, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null, tint = Color(0xFFB9BEC7))
+    }
+}
 
-private fun buildStatusText(status: FrameworkStatus.Snapshot, host: HostApp): String = buildString {
+@Composable
+private fun InfoRow(icon: ImageVector, label: String, value: String) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CircleIcon(icon, GREEN, GREEN_BG)
+        Spacer(Modifier.width(12.dp))
+        Text(label, color = TEXT_MAIN, fontSize = 13.sp, modifier = Modifier.weight(1f))
+        Text(value, color = TEXT_SUB, fontSize = 12.sp, maxLines = 1)
+    }
+}
+
+@Composable
+private fun Divider() {
+    Box(Modifier.fillMaxWidth().padding(start = 60.dp).background(Color(0xFFEFF1F4)).size(1.dp))
+}
+
+private fun readHostApp(context: Context): HostApp = runCatching {
+    val info = context.packageManager.getPackageInfo(BuildConfig.HOST_PACKAGE, 0)
+    HostApp(true, info.versionName.orEmpty(), info.longVersionCode, info.lastUpdateTime)
+}.getOrDefault(HostApp(false, "", 0L, 0L))
+
+private fun formatTime(millis: Long): String =
+    runCatching { SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(millis)) }
+        .getOrDefault("—")
+
+private fun buildStatusText(status: FrameworkStatus.Snapshot, host: HostApp, launcherHidden: Boolean): String = buildString {
     appendLine("WxScript ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
     appendLine("框架：${status.frameworkName.ifBlank { "未连接" }} ${status.frameworkVersion}")
     appendLine("框架 API：${status.apiVersion}")
     appendLine("作用域含微信：${status.scopeActive}")
     appendLine("微信：${if (host.installed) host.versionName + " (" + host.versionCode + ")" else "未安装"}")
-    appendLine("系统：Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})")
+    appendLine("系统：Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
+    appendLine("桌面图标已隐藏：$launcherHidden")
     append("设备：${Build.MANUFACTURER} ${Build.MODEL}")
 }
 
-private fun copyText(context: android.content.Context, text: String) {
+private fun copyText(context: Context, text: String) {
     runCatching {
         val manager = context.getSystemService(ClipboardManager::class.java)
         manager?.setPrimaryClip(ClipData.newPlainText("wxscript", text))
     }
 }
 
-private fun openUrl(context: android.content.Context, url: String) {
+private fun openUrl(context: Context, url: String) {
     runCatching {
         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }.onFailure { Toast.makeText(context, "没有可打开链接的应用", Toast.LENGTH_SHORT).show() }
 }
 
-private fun openLsposed(context: android.content.Context) {
-    val intent = Intent(Intent.ACTION_MAIN).apply {
-        setPackage(LSPOSED_PACKAGE)
-        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+private fun openLsposed(context: Context) {
+    val pm = context.packageManager
+    for (pkg in LSPOSED_PACKAGES) {
+        pm.getLaunchIntentForPackage(pkg)?.let { launch ->
+            launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (runCatching { context.startActivity(launch) }.isSuccess) return
+        }
+        // getLaunchIntentForPackage 拿不到时，自己拼带 CATEGORY_LAUNCHER 的 Intent
+        val fallback = Intent(Intent.ACTION_MAIN).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
+            setPackage(pkg)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        if (pm.resolveActivity(fallback, 0) != null &&
+            runCatching { context.startActivity(fallback) }.isSuccess
+        ) {
+            return
+        }
     }
-    runCatching { context.startActivity(intent) }
-        .onFailure { Toast.makeText(context, "未找到 LSPosed 管理器", Toast.LENGTH_SHORT).show() }
+    Toast.makeText(
+        context,
+        "没找到 LSPosed 管理器：可能被隐藏了（隐藏后包名会变），请从系统设置或快捷方式打开",
+        Toast.LENGTH_LONG,
+    ).show()
 }
+
+// ── 桌面图标显示/隐藏（activity-alias）──
+
+private fun launcherAlias(context: Context): ComponentName =
+    ComponentName(context.packageName, "${context.packageName}.LauncherAlias")
+
+private fun isLauncherEnabled(context: Context): Boolean = runCatching {
+    context.packageManager.getComponentEnabledSetting(launcherAlias(context)) !=
+        PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+}.getOrDefault(true)
+
+private fun setLauncherVisible(context: Context, visible: Boolean): Boolean = runCatching {
+    context.packageManager.setComponentEnabledSetting(
+        launcherAlias(context),
+        if (visible) PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+        else PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+        PackageManager.DONT_KILL_APP,
+    )
+    true
+}.getOrDefault(false)

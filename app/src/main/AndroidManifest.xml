@@ -3,6 +3,10 @@
 
     <queries>
         <package android:name="com.tencent.mm" />
+        <!-- 跳转 LSPosed 管理器需要包可见性（Android 11+） -->
+        <package android:name="org.lsposed.manager" />
+        <package android:name="com.lsposed.manager" />
+        <package android:name="io.github.lsposed.manager" />
     </queries>
 
     <application
@@ -13,7 +17,8 @@
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
 
-        <!-- 模块自身界面：只显示激活信息（框架 / 版本 / 作用域），不承载脚本功能 -->
+        <!-- 模块自身界面：只显示激活信息（框架 / 版本 / 作用域），不承载脚本功能。
+             桌面入口走下面的 activity-alias，这样 App 内可以自行隐藏/恢复图标。 -->
         <activity
             android:name=".activity.MainActivity"
             android:exported="true"
@@ -21,10 +26,21 @@
             android:theme="@android:style/Theme.Material.Light.NoActionBar">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
                 <category android:name="de.robv.android.xposed.category.MODULE_SETTINGS" />
             </intent-filter>
         </activity>
+
+        <activity-alias
+            android:name=".LauncherAlias"
+            android:enabled="true"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:targetActivity=".activity.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
 
         <!-- 脚本设置页：只在微信进程内由 ActivityProxy 拉起（代理 + setClassName），不对外导出 -->
         <activity

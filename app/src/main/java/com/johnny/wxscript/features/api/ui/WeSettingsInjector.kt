@@ -42,6 +42,16 @@ object WeSettingsInjector {
     var lastError: String? = null
         private set
 
+    /** 当前状态（成功/失败原因），诊断页直接展示。 */
+    @Volatile
+    var status: String = "未执行"
+        private set
+
+    /** 已完成注入的入口 key（诊断用）。 */
+    @Volatile
+    var installedKey: String? = null
+        private set
+
     fun install(hostContext: Context, dexKit: DexKitBridge, classLoader: ClassLoader): Boolean {
         if (installed) return true
         lastError = null
@@ -99,6 +109,15 @@ object WeSettingsInjector {
                 mGetSwitchProperty = "",
             )
 
+            val providerMethods = findProviderMethods(finder)
+            if (providerMethods.isEmpty()) {
+                lastError = "设置项映射方法为空（provider=${finder.settingItemClassesProviderClass?.name}）"
+                status = "失败：" + lastError
+                WeLogger.w(TAG, lastError!!)
+                return@runCatching false
+            }
+            WeLogger.i(TAG, "provider methods: " + providerMethods.joinToString { it.name })
+
             manager.createItem {
                 key = ENTRY_KEY
                 title = ENTRY_TITLE
@@ -109,15 +128,35 @@ object WeSettingsInjector {
                 childClass = finder.settingGroupPersonalInfoClass
                 onClick = { activity -> openSettings(activity) }
             }
-            manager.install()
+            manager.install(providerMethods)
             installed = true
+            installedKey = ENTRY_KEY
+            status = "已注入 · key=$ENTRY_KEY · provider=${finder.settingItemClassesProviderClass?.simpleName}"
             WeLogger.i(TAG, "settings entry installed (key=$ENTRY_KEY)")
             true
         }.getOrElse {
             lastError = it.message ?: it.javaClass.simpleName
+            status = "失败：" + lastError
             WeLogger.e(TAG, "settings entry install failed", it)
             false
         }
+    }
+
+    /**
+     * 找出「无参且返回 Map」的方法。
+     *
+     * 微信把每个设置页的 item class 收在一张 Map 里，插件只要往这张表里加自己的 class 就能出现；
+     * 但具体是哪个方法返回这张表，每个版本都不同（8.0.80 上并非类里第一个方法），
+     * 所以这里全量筛选，注入时每个都 hook 一遍（只有真的返回 Map 的那次会生效）。
+     */
+    private fun findProviderMethods(finder: SettingsDexFinder): List<Method> {
+        val provider = finder.settingItemClassesProviderClass ?: return emptyList()
+        val candidates = provider.declaredMethods.filter { method ->
+            method.parameterCount == 0 && Map::class.java.isAssignableFrom(method.returnType)
+        }
+        if (candidates.isNotEmpty()) return candidates
+        // 兜底：返回类型不是 Map 但实现类可能返回 Map（接口签名宽泛）
+        return provider.declaredMethods.filter { it.parameterCount == 0 }
     }
 
     private fun openSettings(activity: Activity) {

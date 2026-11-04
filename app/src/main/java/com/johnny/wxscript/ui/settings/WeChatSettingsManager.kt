@@ -154,9 +154,19 @@ class WeChatSettingsManager(
     }
 
     @Suppress("UNCHECKED_CAST")
-    fun install() {
-        classSettingItemClassesProvider.reflekt().firstMethod()
-            .hookAfterDirectly {
+    /**
+     * 安装注入。
+     *
+     * [providerMethods] 是「无参且返回 Map」的方法集合（由调用方用 SettingsDexFinder 的类 + 反射收集）。
+     * 早先版本用 `reflekt().firstMethod()`，但类的第一个方法不一定是返回映射的那个
+     * （微信 8.0.80 上就命中了别的方法，导致注入静默失效），所以改成由调用方精确给出。
+     */
+    fun install(providerMethods: List<java.lang.reflect.Method>) {
+        if (providerMethods.isEmpty()) {
+            error("没有可 hook 的 item 映射方法")
+        }
+        providerMethods.forEach { method ->
+        method.hookAfterDirectly {
                 val originalMap = result as? Map<Any, Any> ?: return@hookAfterDirectly
                 val mutMap = originalMap.toMutableMap()
 
@@ -209,5 +219,6 @@ class WeChatSettingsManager(
                 contextGetStringUnhook?.unhook(); contextGetStringUnhook = null
                 resourcesGetStringUnhook?.unhook(); resourcesGetStringUnhook = null
             }
+        }
     }
 }
