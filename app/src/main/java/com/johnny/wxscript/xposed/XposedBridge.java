@@ -6,6 +6,8 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Executable;
 import java.lang.reflect.Member;
 import java.lang.reflect.Method;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 import io.github.libxposed.api.XposedInterface;
 
@@ -84,28 +86,29 @@ public final class XposedBridge {
         return ordered[0].new Unhook(handle, executable);
     }
 
-    public static void hookAllMethods(Class<?> clazz, String methodName, XC_MethodHook callback) {
-        Method[] methods = clazz.getDeclaredMethods();
-        int matched = 0;
-        for (Method method : methods) {
+    public static Set<XC_MethodHook.Unhook> hookAllMethods(Class<?> clazz, String methodName, XC_MethodHook callback) {
+        Set<XC_MethodHook.Unhook> unhooks = new LinkedHashSet<>();
+        for (Method method : clazz.getDeclaredMethods()) {
             if (method.getName().equals(methodName)) {
-                hookMethod(method, callback);
-                matched++;
+                unhooks.add(hookMethod(method, callback));
             }
         }
-        if (matched == 0) {
+        if (unhooks.isEmpty()) {
             throw new IllegalArgumentException("在 " + clazz.getName() + " 中找不到方法 " + methodName);
         }
+        return unhooks;
     }
 
-    public static void hookAllConstructors(Class<?> clazz, XC_MethodHook callback) {
+    public static Set<XC_MethodHook.Unhook> hookAllConstructors(Class<?> clazz, XC_MethodHook callback) {
         Constructor<?>[] constructors = clazz.getDeclaredConstructors();
         if (constructors.length == 0) {
             throw new IllegalArgumentException(clazz.getName() + " 没有构造器");
         }
+        Set<XC_MethodHook.Unhook> unhooks = new LinkedHashSet<>();
         for (Constructor<?> constructor : constructors) {
-            hookMethod(constructor, callback);
+            unhooks.add(hookMethod(constructor, callback));
         }
+        return unhooks;
     }
 
     /**

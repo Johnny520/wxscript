@@ -4,6 +4,7 @@ import java.lang.reflect.Member;
 import java.util.HashMap;
 import java.util.Map;
 
+import com.johnny.wxscript.xposed.callbacks.XCallback;
 import io.github.libxposed.api.XposedInterface;
 
 /**

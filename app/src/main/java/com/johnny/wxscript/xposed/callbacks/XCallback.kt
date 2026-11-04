@@ -1,4 +1,4 @@
-package com.johnny.wxscript.xposed
+package com.johnny.wxscript.xposed.callbacks
 
 /**
  * 与 legacy `XCallback` 对齐的优先级常量。
