@@ -451,6 +451,28 @@ P3 的两项遗留（市场完整化、API 文档完整版）已在 P4 完成，
 34. 批量启停逐个调用 `setPluginEnabled`：部分失败无法回滚，必须把「成功 N / 失败 M」如实报给用户，不能伪装成功。
 35. 社交接口都依赖 `WeChatApis.account()`；账号未就绪时要**禁用按钮 + 说明原因**，否则用户只会看到「点了没反应」。
 
+## 13. 界面与入口修复（2026-11-04，v1.5.0 / tag v5）
+
+问题：模块 App 的 LAUNCHER 直接指向 `SettingsActivity`，导致「打开软件就是脚本 4 Tab」，
+而脚本运行时只在微信进程可用，于是满屏「当前不在微信进程」；同时微信设置页里没有任何入口。
+
+修复：
+| 内容 | 说明 |
+|---|---|
+| `activity/MainActivity`（新） | 模块主界面只放激活信息：框架名/版本/API、作用域是否含微信、模块版本、微信版本、系统/设备；按钮「在微信中打开设置」「LSPosed」「复制状态」；关于作者（GitHub / 爱发电） |
+| Manifest | LAUNCHER + `MODULE_SETTINGS` 改为 MainActivity；`SettingsActivity` 改 `exported=false`（只由微信进程内 ActivityProxy 拉起） |
+| 框架状态 | 引入 `io.github.libxposed:service:102.0.0`，`utils/FrameworkStatus` 绑定 LSPosed 服务，读框架名/版本/API/作用域（状态更新切主线程） |
+| 微信设置入口 | `features/api/ui/WeSettingsInjector` + `ui/settings/WeChatSettingsManager`（移植 WCX）+ `utils/reflection/ProxyBuilderUtils`（dexmaker）：在「我 → 设置 → 插件」插入「微信脚本」，点击打开脚本设置页 |
+| 入口解析 | 类锚点复用 `h/Hchat/dexkit/SettingsDexFinder`；设置项抽象方法名从 `SettingGroupAccountInfo` 按签名特征推导（不写死混淆名）；失败只记 `WeSettingsInjector.lastError`，不影响脚本功能 |
+
+新增依赖：`io.github.libxposed:service`、`com.linkedin.dexmaker:dexmaker:2.28.5`。
+
+新增的坑：
+
+36. 模块 App 的 LAUNCHER 一定不能是脚本设置页——脚本运行时绑定微信进程，模块进程打开只会看到「不在微信进程」。
+37. legacy API 下模块进程拿不到微信进程的 SharedPreferences/MMKV（不同 uid），「是否激活」只能走 libxposed `service` 绑定。
+38. 微信设置项是抽象类，`java.lang.reflect.Proxy` 只能代理接口，必须用 dexmaker 的 `ProxyBuilder` 生成子类，并在构造器 after 里 `setInvocationHandler`。
+
 ### 尚未完成
 
 - **P5 剥离 WCX**：需仓库 owner 确认时机（WCX 侧删 `h/Hchat` 162 文件、`me/hd` 10、`scripting_*`、`ScriptSubPages/ScriptsPager`、`HchatScriptBootstrap`、相关 nav/loader/proguard）。本窗口按约定**不动 WCX**。
