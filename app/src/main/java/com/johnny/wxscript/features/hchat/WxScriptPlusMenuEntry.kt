@@ -6,6 +6,7 @@ import android.content.Intent
 import com.johnny.wxscript.activity.SettingsActivity
 import com.johnny.wxscript.constants.Preferences
 import com.johnny.wxscript.loader.utils.ActivityLauncher
+import com.johnny.wxscript.ui.SettingsDialogHost
 import com.johnny.wxscript.utils.HostInfo
 import com.johnny.wxscript.utils.WeLogger
 import h.Hchat.hooks.items.script.ScriptMenuDispatcher
@@ -95,6 +96,10 @@ object WxScriptPlusMenuEntry {
      * 重定向到模块 ClassLoader 实例化；失败再退到 ActivityLauncher 的「宿主包名 + 模块类名」代理方式。
      */
     private fun openSettings(context: Context) {
+        if (context is Activity && SettingsDialogHost.show(context)) {
+            WeLogger.i(TAG, "open settings via dialog host")
+            return
+        }
         runCatching {
             context.startActivity(
                 Intent(context, SettingsActivity::class.java)

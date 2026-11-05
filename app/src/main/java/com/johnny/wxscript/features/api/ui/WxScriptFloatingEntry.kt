@@ -15,6 +15,7 @@ import android.widget.Toast
 import com.johnny.wxscript.activity.SettingsActivity
 import com.johnny.wxscript.constants.Preferences
 import com.johnny.wxscript.loader.utils.ActivityLauncher
+import com.johnny.wxscript.ui.SettingsDialogHost
 import com.johnny.wxscript.utils.HostInfo
 import com.johnny.wxscript.utils.WeLogger
 import com.johnny.wxscript.utils.hookAfterDirectly
@@ -165,8 +166,13 @@ object WxScriptFloatingEntry {
             .onFailure { WeLogger.w(TAG, "add floating view failed: ${it.message}") }
     }
 
-    /** 三级兜底打开脚本页：任意一级成功即可（失败原因会 Toast 出来，便于定位）。 */
+    /** 优先用全屏 Dialog（不依赖 Activity 启动链路），失败再走三级 startActivity 兜底。 */
     private fun openSettings(activity: Activity) {
+        if (SettingsDialogHost.show(activity)) {
+            WeLogger.i(TAG, "open settings: dialog host")
+            return
+        }
+
         var lastError: Throwable? = null
 
         runCatching {

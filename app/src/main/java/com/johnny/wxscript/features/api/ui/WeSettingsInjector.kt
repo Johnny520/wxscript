@@ -208,6 +208,10 @@ object WeSettingsInjector {
         runCatching { Class.forName(name, false, loader) }.getOrNull()
 
     private fun openSettings(activity: Activity) {
+        if (com.johnny.wxscript.ui.SettingsDialogHost.show(activity)) {
+            WeLogger.i(TAG, "open settings via dialog host")
+            return
+        }
         runCatching {
             activity.startActivity(Intent(activity, SettingsActivity::class.java))
         }.onFailure {

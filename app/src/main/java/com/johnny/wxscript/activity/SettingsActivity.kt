@@ -43,6 +43,7 @@ import com.johnny.wxscript.ui.mine.MineTab
 import com.johnny.wxscript.ui.script.PluginEditorScreen
 import com.johnny.wxscript.ui.script.ScriptPluginsPage
 import com.johnny.wxscript.utils.hostProcessName
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 
 /** 页面路由（单层栈：主界面 ⇄ 二级页，二级页返回即回主界面）。 */
 sealed interface WxRoute {
@@ -76,9 +77,15 @@ private val TABS = listOf(
     TabItem("我的", Icons.Filled.Person),
 )
 
+/**
+ * 脚本主界面（4 个 Tab）。
+ *
+ * internal 是因为悬浮入口（[com.johnny.wxscript.features.api.ui.WxScriptFloatingEntry]）在 Activity 启动链路
+ * 不可用时，会用 [com.johnny.wxscript.ui.SettingsDialogHost] 把它塞进一个全屏 Dialog 里显示。
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun WxScriptRoot() {
+internal fun WxScriptRoot() {
     var tab by remember { mutableIntStateOf(1) }
     var route by remember { mutableStateOf<WxRoute>(WxRoute.Root) }
 
@@ -86,7 +93,10 @@ private fun WxScriptRoot() {
     val openLogs = { route = WxRoute.Logs }
     val openApiDocs = { route = WxRoute.ApiDocs }
 
-    BackHandler(enabled = route != WxRoute.Root) { route = WxRoute.Root }
+    // Dialog 里没有 OnBackPressedDispatcherOwner，此时不注册（Dialog 自己处理返回键）。
+    if (LocalOnBackPressedDispatcherOwner.current != null) {
+        BackHandler(enabled = route != WxRoute.Root) { route = WxRoute.Root }
+    }
 
     when (val current = route) {
         is WxRoute.Editor -> {
