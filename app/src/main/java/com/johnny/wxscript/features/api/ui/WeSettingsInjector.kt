@@ -8,7 +8,9 @@ import com.johnny.wxscript.ui.settings.WeChatSettingsManager
 import com.johnny.wxscript.utils.WeLogger
 import h.Hchat.dexkit.SettingsDexFinder
 import org.luckypray.dexkit.DexKitBridge
+import org.luckypray.dexkit.query.FindClass
 import org.luckypray.dexkit.query.FindMethod
+import org.luckypray.dexkit.query.matchers.ClassMatcher
 import org.luckypray.dexkit.query.matchers.MethodMatcher
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
@@ -102,9 +104,14 @@ object WeSettingsInjector {
                 ?: hostClassOrNull(classLoader, CLS_BASE_SETTING_UI)
 
             // 真正混淆、只能靠 DexKit 猜的三个基类。
+            // SettingsDexFinder 的判定条件比 WCX 更严（如 SettingLocation 要求 "SettingLocation(parentGroup=" 与
+            // ", frontItem=" 同时出现在同一方法里），微信改日志串后就整体失配；这里按 WCX 的条件做兜底查询。
             val baseItem = finder.baseSettingItemClass
+                ?: dexKitClass(dexKit, classLoader, "", "activity", "context", "intent")
             val provider = finder.settingItemClassesProviderClass
+                ?: dexKitProviderClass(dexKit, classLoader)
             val locationClass = finder.settingLocationClass
+                ?: dexKitClass(dexKit, classLoader, ", frontItem=")
 
             anchorDetail = buildString {
                 append("groupMain=${groupMain?.simpleName ?: "null"}")
@@ -202,6 +209,34 @@ object WeSettingsInjector {
             WeLogger.e(TAG, "settings entry install failed", it)
             false
         }
+    }
+
+    /** WCX 式兜底：按「类中某方法引用这些字符串」查类。 */
+    private fun dexKitClass(
+        dexKit: DexKitBridge,
+        classLoader: ClassLoader,
+        vararg strings: String,
+    ): Class<*>? = runCatching {
+        val query = FindClass.create().apply {
+            matcher(ClassMatcher.create().usingEqStrings(*strings))
+        }
+        dexKit.findClass(query)
+            .mapNotNull { data -> runCatching { data.getClassInstance(classLoader) }.getOrNull() }
+            .firstOrNull()
+    }.getOrNull()
+
+    /** 设置项注册表类：优先挑「有无参且返回 Map 的方法」的那个。 */
+    private fun dexKitProviderClass(dexKit: DexKitBridge, classLoader: ClassLoader): Class<*>? {
+        val candidates = runCatching {
+            val query = FindClass.create().apply {
+                matcher(ClassMatcher.create().usingEqStrings("Repairer_Setting"))
+            }
+            dexKit.findClass(query)
+                .mapNotNull { data -> runCatching { data.getClassInstance(classLoader) }.getOrNull() }
+        }.getOrDefault(emptyList())
+        return candidates.firstOrNull { cls ->
+            cls.declaredMethods.any { it.parameterCount == 0 && Map::class.java.isAssignableFrom(it.returnType) }
+        } ?: candidates.firstOrNull()
     }
 
     private fun hostClassOrNull(loader: ClassLoader, name: String): Class<*>? =

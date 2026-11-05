@@ -106,10 +106,20 @@ object WxScriptStartup {
      */
     private fun installEntries(application: Application) {
         Handler(android.os.Looper.getMainLooper()).postDelayed({
-            runCatching {
+            val floatingStatus = runCatching {
                 com.johnny.wxscript.features.api.ui.WxScriptFloatingEntry.install(application.classLoader)
-                WeLogger.i(TAG, "悬浮入口：" + com.johnny.wxscript.features.api.ui.WxScriptFloatingEntry.status)
-            }.onFailure { WeLogger.e(TAG, "悬浮入口安装失败", it) }
+                com.johnny.wxscript.features.api.ui.WxScriptFloatingEntry.status
+            }.onFailure { WeLogger.e(TAG, "悬浮入口安装失败", it) }.getOrDefault("失败（异常）")
+            WeLogger.i(TAG, "悬浮入口：$floatingStatus")
+
+            // 挂载失败时给用户一个可见提示（成功时不打扰），避免「什么都没有」却无从排查。
+            if (com.johnny.wxscript.features.api.ui.WxScriptFloatingEntry.installed.not()) {
+                runCatching {
+                    android.widget.Toast.makeText(
+                        application, "WxScript 入口挂载失败：$floatingStatus", android.widget.Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
 
             runCatching {
                 com.johnny.wxscript.features.hchat.WxScriptPlusMenuEntry.install(application)
