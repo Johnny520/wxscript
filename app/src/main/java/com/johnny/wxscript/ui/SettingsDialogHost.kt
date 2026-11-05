@@ -4,13 +4,8 @@ import android.app.Activity
 import android.app.Dialog
 import android.content.Context
 import android.view.ViewGroup
+import androidx.activity.ComponentDialog
 import androidx.compose.ui.platform.ComposeView
-import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.ViewModelStoreOwner
-import androidx.lifecycle.ViewTreeLifecycleOwner
-import androidx.lifecycle.ViewTreeViewModelStoreOwner
-import androidx.savedstate.SavedStateRegistryOwner
-import androidx.savedstate.ViewTreeSavedStateRegistryOwner
 import com.johnny.wxscript.activity.WxScriptRoot
 import com.johnny.wxscript.utils.WeLogger
 
@@ -35,7 +30,9 @@ object SettingsDialogHost {
         if (activity == null || activity.isFinishing) return false
         if (isShowing()) return true
         return runCatching {
-            val dialog = Dialog(activity, android.R.style.Theme_Material_Light_NoActionBar)
+            // ComponentDialog 自带 Lifecycle / SavedState / ViewModelStore 三个 owner，
+            // 省掉手动给 decorView 挂 ViewTree*Owner（也避免依赖 lifecycle 的具体包路径）。
+            val dialog = ComponentDialog(activity, android.R.style.Theme_Material_Light_NoActionBar)
             val content = ComposeView(activity).apply {
                 layoutParams = ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
@@ -51,13 +48,6 @@ object SettingsDialogHost {
             )
             dialog.setOnDismissListener { current = null }
             dialog.show()
-
-            // ComposeView 需要 ViewTree 三件套，Dialog 的 decorView 默认没有，必须手动挂。
-            dialog.window?.decorView?.let { decor ->
-                ViewTreeLifecycleOwner.set(decor, activity as LifecycleOwner)
-                (activity as? ViewModelStoreOwner)?.let { ViewTreeViewModelStoreOwner.set(decor, it) }
-                (activity as? SavedStateRegistryOwner)?.let { ViewTreeSavedStateRegistryOwner.set(decor, it) }
-            }
 
             current = dialog
             WeLogger.i(TAG, "settings dialog shown on ${activity.javaClass.name}")

@@ -196,7 +196,12 @@ object WxScriptFloatingEntry {
             return
         }.onFailure { lastError = it }
 
-        WeLogger.e(TAG, "open settings failed (all fallbacks)", lastError)
+        val reason = lastError
+        if (reason != null) {
+            WeLogger.e(TAG, "open settings failed (all fallbacks): " + (reason.message ?: reason.javaClass.simpleName), reason)
+        } else {
+            WeLogger.e(TAG, "open settings failed (all fallbacks): unknown")
+        }
         runCatching {
             Toast.makeText(
                 activity,
