@@ -2,7 +2,7 @@ package com.johnny.wxscript.loader.utils
 
 import android.content.Intent
 import android.os.Bundle
-import de.robv.android.xposed.XC_MethodHook
+import com.johnny.wxscript.xposed.XC_MethodHook
 import dev.ujhhgtg.reflekt.reflekt
 import com.johnny.wxscript.utils.WeLogger
 import com.johnny.wxscript.utils.hookDirectly

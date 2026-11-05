@@ -2,8 +2,8 @@
 
 package com.johnny.wxscript.utils
 
-import de.robv.android.xposed.XC_MethodHook
-import de.robv.android.xposed.XposedBridge
+import com.johnny.wxscript.xposed.XC_MethodHook
+import com.johnny.wxscript.xposed.XposedBridge
 import dev.ujhhgtg.reflekt.reflected.BaseReflectedMethod
 import dev.ujhhgtg.reflekt.reflected.ReflectedConstructor
 import java.lang.reflect.Executable

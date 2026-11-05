@@ -2,7 +2,7 @@ package com.johnny.wxscript.features.items.scripting_js
 
 import android.os.Handler
 import android.os.Looper
-import de.robv.android.xposed.XC_MethodHook
+import com.johnny.wxscript.xposed.XC_MethodHook
 import dev.ujhhgtg.reflekt.utils.createInstance
 import dev.ujhhgtg.reflekt.utils.makeAccessible
 import dev.ujhhgtg.reflekt.utils.toClass

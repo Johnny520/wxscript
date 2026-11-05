@@ -72,6 +72,7 @@ import com.johnny.wxscript.utils.FrameworkStatus
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.johnny.wxscript.ui.HostLogViewer
 
 /**
  * 模块主界面（运行在 WxScript 自己的进程里）。
@@ -170,15 +171,15 @@ private fun HomeScreen() {
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 CircleIcon(
-                    icon = if (status.bound) Icons.Filled.CheckCircle else Icons.Filled.Info,
-                    tint = if (status.bound) GREEN else Color(0xFF3B82F6),
-                    bg = if (status.bound) Color(0xFFD6F2E0) else Color(0xFFEAF3FF),
+                    icon = if (status.bound) Icons.Filled.CheckCircle else Icons.Filled.Warning,
+                    tint = if (status.bound) GREEN else PINK_FG,
+                    bg = if (status.bound) Color(0xFFD6F2E0) else Color(0xFFFFDCDC),
                 )
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(
-                        if (status.bound) "已激活" else "已安装 · legacy 注入",
-                        color = if (status.bound) Color(0xFF0B7A3E) else Color(0xFF1D4ED8),
+                        if (status.bound) "已激活" else "未激活",
+                        color = if (status.bound) Color(0xFF0B7A3E) else PINK_FG,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 15.sp,
                     )
@@ -187,10 +188,9 @@ private fun HomeScreen() {
                             "${status.frameworkName.ifBlank { "LSPosed" }} ${status.frameworkVersion} · API ${status.apiVersion}" +
                                 if (status.scopeActive) " · 已勾选微信" else " · 未勾选微信"
                         } else {
-                            "legacy 模式下不提供框架服务信息：进微信看到右侧「脚本」按钮即已生效；" +
-                                "没有按钮请在 LSPosed 里确认已勾选微信并重启微信"
+                            "请在 Xposed 框架中勾选并重启生效"
                         },
-                        color = if (status.bound) Color(0xFF0B7A3E).copy(alpha = 0.8f) else Color(0xFF1D4ED8).copy(alpha = 0.85f),
+                        color = if (status.bound) Color(0xFF0B7A3E).copy(alpha = 0.8f) else PINK_FG.copy(alpha = 0.85f),
                         fontSize = 12.sp,
                     )
                 }
@@ -251,6 +251,40 @@ private fun HomeScreen() {
                 onClick = {
                     val ok = HostLauncher.openSettingsInHost(context)
                     if (!ok) Toast.makeText(context, "启动失败：请确认微信已安装且模块已激活", Toast.LENGTH_LONG).show()
+                },
+            )
+            Divider()
+            ActionRow(
+                icon = Icons.Filled.Info,
+                title = "微信侧日志",
+                subtitle = if (HostLogViewer.isGranted()) {
+                    "查看模块是否真的注入了微信进程（含入口状态）"
+                } else {
+                    "需要授予「所有文件访问」权限后才能读取"
+                },
+                onClick = {
+                    if (!HostLogViewer.isGranted()) {
+                        HostLogViewer.requestGrant(context)
+                        Toast.makeText(
+                            context,
+                            "请允许「所有文件访问」，返回后再次点击",
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    } else {
+                        val text = HostLogViewer.summary() + "\n\n" + HostLogViewer.tail()
+                        android.app.AlertDialog.Builder(context)
+                            .setTitle("微信侧日志")
+                            .setMessage(text)
+                            .setPositiveButton("关闭", null)
+                            .setNeutralButton("复制") { _, _ ->
+                                runCatching {
+                                    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    cm.setPrimaryClip(ClipData.newPlainText("wxscript-host-log", text))
+                                    Toast.makeText(context, "已复制", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                            .show()
+                    }
                 },
             )
             Divider()

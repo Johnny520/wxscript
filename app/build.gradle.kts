@@ -19,8 +19,8 @@ android {
         applicationId = "com.johnny.wxscript"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 17
-        versionName = "v1.8.0"
+        versionCode = 18
+        versionName = "v1.9.0"
 
         buildConfigField("String", "TAG", "\"WxScript\"")
         buildConfigField("String", "HOST_PACKAGE", "\"com.tencent.mm\"")
