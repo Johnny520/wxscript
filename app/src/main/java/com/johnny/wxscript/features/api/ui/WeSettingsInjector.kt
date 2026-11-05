@@ -220,20 +220,21 @@ object WeSettingsInjector {
         val query = FindClass.create().apply {
             matcher(ClassMatcher.create().usingEqStrings(*strings))
         }
-        dexKit.findClass(query)
-            .mapNotNull { data -> runCatching { data.getClassInstance(classLoader) }.getOrNull() }
+        val results: List<org.luckypray.dexkit.result.ClassData> = dexKit.findClass(query)
+        results.asSequence()
+            .mapNotNull { data -> runCatching { Class.forName(data.name, false, classLoader) }.getOrNull() }
             .firstOrNull()
     }.getOrNull()
 
     /** 设置项注册表类：优先挑「有无参且返回 Map 的方法」的那个。 */
     private fun dexKitProviderClass(dexKit: DexKitBridge, classLoader: ClassLoader): Class<*>? {
-        val candidates = runCatching {
+        val candidates: List<Class<*>> = runCatching {
             val query = FindClass.create().apply {
                 matcher(ClassMatcher.create().usingEqStrings("Repairer_Setting"))
             }
-            dexKit.findClass(query)
-                .mapNotNull { data -> runCatching { data.getClassInstance(classLoader) }.getOrNull() }
-        }.getOrDefault(emptyList())
+            val results: List<org.luckypray.dexkit.result.ClassData> = dexKit.findClass(query)
+            results.mapNotNull { data -> runCatching { Class.forName(data.name, false, classLoader) }.getOrNull() }
+        }.getOrElse { emptyList() }
         return candidates.firstOrNull { cls ->
             cls.declaredMethods.any { it.parameterCount == 0 && Map::class.java.isAssignableFrom(it.returnType) }
         } ?: candidates.firstOrNull()
