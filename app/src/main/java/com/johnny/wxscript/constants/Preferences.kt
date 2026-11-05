@@ -13,6 +13,10 @@ object Preferences {
     /** 微信右上角「+」菜单里的「微信脚本」入口（默认开启，可在首页 → 快捷入口关闭）。 */
     const val PLUS_MENU_ENTRY = "plus_menu_entry_enabled"
 
+    /** 微信主界面悬浮入口「脚本」（默认开启；不依赖任何微信页面结构，最可靠的一条）。 */
+    const val FLOATING_ENTRY = "floating_entry_enabled"
+    const val FLOATING_ENTRY_Y = "floating_entry_y_percent"
+
     /** 「密友功能」分类总开关：关闭时该分类下所有功能都不加载（各功能自身开关状态保留）。 */
     const val HIDDEN_CONTACTS_MASTER_ENABLED = "hidden_contacts_master_enabled"
 
@@ -39,6 +43,12 @@ object Preferences {
 
     // 「+」菜单入口（默认开启）
     var plusMenuEntryEnabled by prefOption(PLUS_MENU_ENTRY, true)
+
+    // 微信主界面悬浮入口（默认开启）
+    var floatingEntryEnabled by prefOption(FLOATING_ENTRY, true)
+
+    /** 悬浮按钮纵向位置（0~100 百分比），拖动后记忆。 */
+    var floatingEntryYPercent by prefOption(FLOATING_ENTRY_Y, 55)
 
     // 「密友功能」分类总开关（默认开启）
     var hiddenContactsMasterEnabled by prefOption(HIDDEN_CONTACTS_MASTER_ENABLED, true)

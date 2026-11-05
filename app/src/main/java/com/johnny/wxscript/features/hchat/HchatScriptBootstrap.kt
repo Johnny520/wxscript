@@ -3,6 +3,7 @@ package com.johnny.wxscript.features.hchat
 import android.os.Handler
 import android.os.HandlerThread
 import com.johnny.wxscript.features.api.ui.WeSettingsInjector
+import com.johnny.wxscript.features.api.ui.WxScriptFloatingEntry
 import com.johnny.wxscript.utils.HostInfo
 import com.johnny.wxscript.utils.WeLogger
 import com.johnny.wxscript.utils.reflection.ClassLoaders
@@ -206,6 +207,12 @@ object HchatScriptBootstrap {
             // 微信「+」菜单固定入口：与设置页注入完全独立的一条通道。
             // 设置页锚点随版本混淆变化、一旦漂移整条链就静默失效，加号菜单复用脚本插件菜单的 Hook，
             // 两条通道任意一条成功，用户都能进脚本页。
+            // 微信主界面悬浮入口：不依赖任何微信页面结构，模块加载成功就一定看得到。
+            runCatching {
+                WxScriptFloatingEntry.install(hostClassLoader)
+                WeLogger.i(TAG, "悬浮入口：" + WxScriptFloatingEntry.status)
+            }.onFailure { WeLogger.e(TAG, "悬浮入口安装失败", it) }
+
             runCatching { WxScriptPlusMenuEntry.install(hostContext) }
                 .onSuccess {
                     status += " / " + WxScriptPlusMenuEntry.status

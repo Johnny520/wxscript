@@ -32,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.johnny.wxscript.constants.Preferences
+import com.johnny.wxscript.features.api.ui.WxScriptFloatingEntry
 import com.johnny.wxscript.features.hchat.WxScriptPlusMenuEntry
 import com.johnny.wxscript.features.hchat.HchatScriptBootstrap
 import com.johnny.wxscript.features.hchat.ScriptFeaturesInstaller
@@ -172,6 +173,41 @@ fun HomeTab(
                     TextButton(onClick = onOpenDiagnostics) { Text("诊断 / 一键修复") }
                     TextButton(onClick = onOpenLogs) { Text("日志") }
                 }
+            }
+            HorizontalDivider()
+        }
+
+        item {
+            var floating by remember { mutableStateOf(Preferences.floatingEntryEnabled) }
+            var floatingStatus by remember { mutableStateOf(WxScriptFloatingEntry.status) }
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            "微信主界面悬浮入口",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            "在微信主界面右侧显示「脚本」小按钮（可拖动），不依赖微信任何页面结构，最稳的一条入口",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = floating,
+                        onCheckedChange = { checked ->
+                            floating = checked
+                            Preferences.floatingEntryEnabled = checked
+                            floatingStatus = if (checked) "下次回到微信主界面时显示" else "已关闭（回到微信主界面后消失）"
+                        },
+                    )
+                }
+                Text(
+                    floatingStatus,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             HorizontalDivider()
         }

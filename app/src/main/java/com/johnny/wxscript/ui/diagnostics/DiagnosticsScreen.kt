@@ -47,6 +47,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.johnny.wxscript.constants.Preferences
 import com.johnny.wxscript.features.hchat.WxScriptPlusMenuEntry
+import com.johnny.wxscript.features.api.ui.WxScriptFloatingEntry
 
 /** 诊断项：名称 / 状态 / 详情。 */
 private data class DiagItem(val name: String, val state: DotState, val detail: String)
@@ -324,6 +325,16 @@ private fun collectDiagnostics(context: android.content.Context): List<DiagItem>
             else -> DotState.RUNNING
         },
         WeSettingsInjector.status,
+    )
+
+    items += DiagItem(
+        "微信悬浮入口",
+        when {
+            WxScriptFloatingEntry.installed -> DotState.OK
+            !Preferences.floatingEntryEnabled -> DotState.IDLE
+            else -> DotState.RUNNING
+        },
+        WxScriptFloatingEntry.status,
     )
 
     items += DiagItem(
