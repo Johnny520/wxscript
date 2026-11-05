@@ -52,6 +52,11 @@ object WxScriptStartup {
             runCatching { ActivityLauncher.init() }
                 .onFailure { WeLogger.e(TAG, "ActivityLauncher init failed", it) }
 
+            // 入口与脚本子系统解耦：入口在最外层先挂上，脚本运行时初始化失败也不影响用户进设置页。
+            if (TargetProcesses.isInMain) {
+                installEntries(application)
+            }
+
             if (!TargetProcesses.isInMain) {
                 WeLogger.i(TAG, "skip script bootstrap in non-main process: ${TargetProcesses.currentName}")
                 return
@@ -91,6 +96,26 @@ object WxScriptStartup {
                 WeLogger.e(TAG, "failed to replace module ClassLoader parent", it)
             }
         }
+    }
+
+    /**
+     * 安装微信内入口（悬浮按钮 / 加号菜单）。
+     *
+     * 全部放在主线程延迟执行：DecorView 与 MMKV 都要等宿主初始化完；且这里不碰 DexKit，
+     * 即使脚本子系统完全失败也能正常挂上。
+     */
+    private fun installEntries(application: Application) {
+        Handler(android.os.Looper.getMainLooper()).postDelayed({
+            runCatching {
+                com.johnny.wxscript.features.api.ui.WxScriptFloatingEntry.install(application.classLoader)
+                WeLogger.i(TAG, "悬浮入口：" + com.johnny.wxscript.features.api.ui.WxScriptFloatingEntry.status)
+            }.onFailure { WeLogger.e(TAG, "悬浮入口安装失败", it) }
+
+            runCatching {
+                com.johnny.wxscript.features.hchat.WxScriptPlusMenuEntry.install(application)
+                WeLogger.i(TAG, "加号入口：" + com.johnny.wxscript.features.hchat.WxScriptPlusMenuEntry.status)
+            }.onFailure { WeLogger.e(TAG, "加号入口安装失败", it) }
+        }, 3_000L)
     }
 
     private fun ensureHiddenApiAccess() {

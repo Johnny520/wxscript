@@ -41,8 +41,12 @@ object WxScriptPlusMenuEntry {
         private set
 
     /** 在微信进程（主进程）里注册「+」菜单入口。重复调用是安全的。 */
+    /** 开关读取容错：微信进程早期 MMKV 可能还没初始化，读配置会抛异常，此时按「开启」处理。 */
+    private fun enabled(): Boolean =
+        runCatching { Preferences.plusMenuEntryEnabled }.getOrDefault(true)
+
     fun install(context: Context) {
-        if (!Preferences.plusMenuEntryEnabled) {
+        if (!enabled()) {
             uninstall()
             status = "已关闭（首页 → 快捷入口可开启）"
             return

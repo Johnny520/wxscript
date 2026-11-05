@@ -49,8 +49,15 @@ object WxScriptFloatingEntry {
     var installed: Boolean = false
         private set
 
+    @Volatile
+    private var toastShown = false
+
+    /** 开关读取容错：微信进程早期 MMKV 可能还没初始化，读配置会抛异常，此时按「开启」处理。 */
+    private fun enabled(): Boolean =
+        runCatching { Preferences.floatingEntryEnabled }.getOrDefault(true)
+
     fun install(classLoader: ClassLoader) {
-        if (!Preferences.floatingEntryEnabled) {
+        if (!enabled()) {
             status = "已关闭（首页 → 快捷入口可开启）"
             return
         }
@@ -91,7 +98,7 @@ object WxScriptFloatingEntry {
 
     private fun attachTo(activity: Activity?) {
         if (activity == null || activity.isFinishing) return
-        if (!Preferences.floatingEntryEnabled) return
+        if (!enabled()) return
         val decor = activity.window?.decorView as? ViewGroup ?: return
         if (decor.findViewWithTag<View>(VIEW_TAG) != null) return
 
@@ -162,8 +169,47 @@ object WxScriptFloatingEntry {
             }
         })
 
+        button.setOnLongClickListener {
+            showDiagnostics(activity)
+            true
+        }
+
         runCatching { decor.addView(button, lp) }
             .onFailure { WeLogger.w(TAG, "add floating view failed: ${it.message}") }
+
+        if (!toastShown) {
+            toastShown = true
+            runCatching {
+                Toast.makeText(ctx, "WxScript 入口已就绪（右侧「脚本」按钮，长按看诊断）", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    /** 长按悬浮按钮：在没有入口/进不去脚本页时也能看到诊断（可复制发反馈）。 */
+    private fun showDiagnostics(activity: Activity) {
+        val text = buildString {
+            appendLine("WxScript 诊断")
+            appendLine("悬浮入口：" + status)
+            appendLine("+ 菜单入口：" + runCatching { com.johnny.wxscript.features.hchat.WxScriptPlusMenuEntry.status }.getOrDefault("?"))
+            appendLine("设置页入口：" + runCatching { WeSettingsInjector.status }.getOrDefault("?"))
+            appendLine("脚本引擎：" + runCatching { com.johnny.wxscript.features.hchat.HchatScriptBootstrap.status }.getOrDefault("?"))
+            appendLine("日志目录：/storage/emulated/0/Android/data/com.tencent.mm/" + com.johnny.wxscript.BuildConfig.TAG + "/logs")
+        }
+        runCatching {
+            android.app.AlertDialog.Builder(activity)
+                .setTitle("WxScript 诊断")
+                .setMessage(text)
+                .setPositiveButton("知道了", null)
+                .setNeutralButton("复制") { _, _ ->
+                    runCatching {
+                        val cm = activity.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                                as android.content.ClipboardManager
+                        cm.setPrimaryClip(android.content.ClipData.newPlainText("wxscript", text))
+                        Toast.makeText(activity, "已复制", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                .show()
+        }.onFailure { WeLogger.e(TAG, "show diagnostics failed", it) }
     }
 
     /** 优先用全屏 Dialog（不依赖 Activity 启动链路），失败再走三级 startActivity 兜底。 */
