@@ -45,6 +45,8 @@ import h.Hchat.hooks.items.script.ScriptPluginRuntime
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.johnny.wxscript.constants.Preferences
+import com.johnny.wxscript.features.hchat.WxScriptPlusMenuEntry
 
 /** 诊断项：名称 / 状态 / 详情。 */
 private data class DiagItem(val name: String, val state: DotState, val detail: String)
@@ -322,6 +324,21 @@ private fun collectDiagnostics(context: android.content.Context): List<DiagItem>
             else -> DotState.RUNNING
         },
         WeSettingsInjector.status,
+    )
+
+    items += DiagItem(
+        "微信 + 菜单入口",
+        when {
+            WxScriptPlusMenuEntry.installed -> DotState.OK
+            !Preferences.plusMenuEntryEnabled -> DotState.IDLE
+            WxScriptPlusMenuEntry.status.startsWith("失败") -> DotState.FAIL
+            else -> DotState.RUNNING
+        },
+        if (!Preferences.plusMenuEntryEnabled) {
+            "已关闭（首页 → 快捷入口可开启）"
+        } else {
+            WxScriptPlusMenuEntry.status + "｜设置项开、但 + 菜单里看不到时，多半是 PlusSubMenuHelper 锚点没解析到，看日志 tag=PlusMenuEntry"
+        },
     )
 
     val serverUrl = runCatching { MarketData.serverUrl(context) }.getOrDefault("")

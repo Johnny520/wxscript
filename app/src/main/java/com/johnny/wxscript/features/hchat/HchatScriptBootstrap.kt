@@ -203,6 +203,16 @@ object HchatScriptBootstrap {
 
             scheduleReadyWatchdog()
 
+            // 微信「+」菜单固定入口：与设置页注入完全独立的一条通道。
+            // 设置页锚点随版本混淆变化、一旦漂移整条链就静默失效，加号菜单复用脚本插件菜单的 Hook，
+            // 两条通道任意一条成功，用户都能进脚本页。
+            runCatching { WxScriptPlusMenuEntry.install(hostContext) }
+                .onSuccess {
+                    status += " / " + WxScriptPlusMenuEntry.status
+                    WeLogger.i(TAG, "加号菜单入口：" + WxScriptPlusMenuEntry.status)
+                }
+                .onFailure { WeLogger.e(TAG, "加号菜单入口注册失败", it) }
+
             // 微信设置页入口：DexKit 查询较重，单独线程做，失败不影响脚本功能。
             val entryThread = HandlerThread("WxScript-SettingsEntry").apply { start() }
             val entryHandler = Handler(entryThread.looper)

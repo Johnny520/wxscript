@@ -10,6 +10,9 @@ object Preferences {
     const val RESET_DEX_ON_HOT_UPDATE = "reset_dex_on_hot_upd"
     const val MATCH_GENERIC_WXID_EXP = "match_generic_wxid"
 
+    /** 微信右上角「+」菜单里的「微信脚本」入口（默认开启，可在首页 → 快捷入口关闭）。 */
+    const val PLUS_MENU_ENTRY = "plus_menu_entry_enabled"
+
     /** 「密友功能」分类总开关：关闭时该分类下所有功能都不加载（各功能自身开关状态保留）。 */
     const val HIDDEN_CONTACTS_MASTER_ENABLED = "hidden_contacts_master_enabled"
 
@@ -33,6 +36,9 @@ object Preferences {
 
     // ALWAYS check whether sender is group chat!!!
     var matchGenericWxIdExp by prefOption(MATCH_GENERIC_WXID_EXP, true)
+
+    // 「+」菜单入口（默认开启）
+    var plusMenuEntryEnabled by prefOption(PLUS_MENU_ENTRY, true)
 
     // 「密友功能」分类总开关（默认开启）
     var hiddenContactsMasterEnabled by prefOption(HIDDEN_CONTACTS_MASTER_ENABLED, true)

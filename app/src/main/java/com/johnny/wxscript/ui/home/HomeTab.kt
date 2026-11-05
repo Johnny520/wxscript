@@ -16,6 +16,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -30,6 +31,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.johnny.wxscript.constants.Preferences
+import com.johnny.wxscript.features.hchat.WxScriptPlusMenuEntry
 import com.johnny.wxscript.features.hchat.HchatScriptBootstrap
 import com.johnny.wxscript.features.hchat.ScriptFeaturesInstaller
 import com.johnny.wxscript.ui.components.DotState
@@ -169,6 +172,44 @@ fun HomeTab(
                     TextButton(onClick = onOpenDiagnostics) { Text("诊断 / 一键修复") }
                     TextButton(onClick = onOpenLogs) { Text("日志") }
                 }
+            }
+            HorizontalDivider()
+        }
+
+        item {
+            var plusEntry by remember { mutableStateOf(Preferences.plusMenuEntryEnabled) }
+            var plusStatus by remember { mutableStateOf(WxScriptPlusMenuEntry.status) }
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            "微信「+」菜单入口",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            "在微信主界面右上角 + 里显示「微信脚本」，随时进入脚本设置页",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = plusEntry,
+                        onCheckedChange = { checked ->
+                            plusEntry = checked
+                            Preferences.plusMenuEntryEnabled = checked
+                            scope.launch {
+                                withContext(Dispatchers.IO) { WxScriptPlusMenuEntry.refresh(context) }
+                                plusStatus = WxScriptPlusMenuEntry.status
+                            }
+                        },
+                    )
+                }
+                Text(
+                    plusStatus,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             HorizontalDivider()
         }
