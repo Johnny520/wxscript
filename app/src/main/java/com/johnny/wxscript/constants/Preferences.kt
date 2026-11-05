@@ -17,6 +17,9 @@ object Preferences {
     const val FLOATING_ENTRY = "floating_entry_enabled"
     const val FLOATING_ENTRY_Y = "floating_entry_y_percent"
 
+    /** 微信启动时提示「WxScript 已就绪」（排查入口问题时很有用，可关）。 */
+    const val ENTRY_READY_TOAST = "entry_ready_toast"
+
     /** 「密友功能」分类总开关：关闭时该分类下所有功能都不加载（各功能自身开关状态保留）。 */
     const val HIDDEN_CONTACTS_MASTER_ENABLED = "hidden_contacts_master_enabled"
 
@@ -49,6 +52,9 @@ object Preferences {
 
     /** 悬浮按钮纵向位置（0~100 百分比），拖动后记忆。 */
     var floatingEntryYPercent by prefOption(FLOATING_ENTRY_Y, 55)
+
+    // 微信启动提示（默认开启）
+    var entryReadyToast by prefOption(ENTRY_READY_TOAST, true)
 
     // 「密友功能」分类总开关（默认开启）
     var hiddenContactsMasterEnabled by prefOption(HIDDEN_CONTACTS_MASTER_ENABLED, true)

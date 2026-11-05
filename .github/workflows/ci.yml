@@ -52,6 +52,23 @@ jobs:
           find app/build/outputs/apk/release -name '*.apk' -exec cp {} out/ \;
           ls -la out
 
+      # 打包自检：libxposed 入口是否真的进了 APK（缺 META-INF/xposed 文件或入口类被 R8 删掉，
+      # 都会表现为「模块在微信里完全不加载、任何入口都没有」，人工很难发现）。
+      - name: Inspect APK for libxposed entry
+        run: |
+          APK=$(ls out/*.apk | head -1)
+          echo "== APK: $APK"
+          echo "-- META-INF/xposed --"
+          unzip -l "$APK" | grep -i "xposed" || echo "MISSING: no META-INF/xposed entry"
+          echo "-- java_init.list --"
+          unzip -p "$APK" META-INF/xposed/java_init.list || echo "MISSING java_init.list"
+          echo "-- module.prop --"
+          unzip -p "$APK" META-INF/xposed/module.prop || echo "MISSING module.prop"
+          echo "-- entry class in dex --"
+          for i in 0 1 2 3 4; do
+            unzip -p "$APK" classes${i:+$i}.dex 2>/dev/null | strings | grep -m1 "com/johnny/wxscript/entry/LibXposedEntry" && break
+          done || echo "MISSING entry class"
+
       - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:

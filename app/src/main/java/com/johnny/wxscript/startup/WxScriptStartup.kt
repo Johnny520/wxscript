@@ -112,11 +112,16 @@ object WxScriptStartup {
             }.onFailure { WeLogger.e(TAG, "悬浮入口安装失败", it) }.getOrDefault("失败（异常）")
             WeLogger.i(TAG, "悬浮入口：$floatingStatus")
 
-            // 挂载失败时给用户一个可见提示（成功时不打扰），避免「什么都没有」却无从排查。
-            if (com.johnny.wxscript.features.api.ui.WxScriptFloatingEntry.installed.not()) {
-                runCatching {
+            // 可见反馈：成功/失败都提示一次（可在模块 App 关掉），排查「什么都没有」时最关键。
+            runCatching {
+                val ok = com.johnny.wxscript.features.api.ui.WxScriptFloatingEntry.installed
+                val wantToast = com.johnny.wxscript.constants.Preferences.entryReadyToast
+                if (!ok || wantToast) {
                     android.widget.Toast.makeText(
-                        application, "WxScript 入口挂载失败：$floatingStatus", android.widget.Toast.LENGTH_LONG
+                        application,
+                        if (ok) "WxScript ${com.johnny.wxscript.BuildConfig.VERSION_NAME} 已就绪（右侧「脚本」按钮）"
+                        else "WxScript 入口挂载失败：$floatingStatus",
+                        android.widget.Toast.LENGTH_LONG,
                     ).show()
                 }
             }
