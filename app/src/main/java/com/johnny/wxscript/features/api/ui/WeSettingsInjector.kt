@@ -24,8 +24,17 @@ import java.lang.reflect.Modifier
  *   把 class 注册进 SettingItemClassesProvider 的 page→items 映射，由微信自己渲染；
  * - 类解析失败时直接放弃并打日志，不影响脚本功能本身。
  *
- * 说明：微信设置页的类名/方法名都是混淆的，全部通过 [SettingsDexFinder] + 反射推导，
- * 不写死任何混淆名。
+ * ## 锚点策略（8.0.79 / 8.0.80 实测）
+ *
+ * 设置页的「分组类」本身**没有混淆**，可以直接按类名反射拿到：
+ * `com.tencent.mm.plugin.setting.ui.setting_new.settings.SettingGroupMain` /
+ * `SettingGroupPersonalInfo` / `SettingGroupAccountInfo` / `SettingAdditionHeaderSearch`、
+ * `...setting_new.base.BaseSettingPrefUI` / `BaseSettingUI`。
+ *
+ * 只有三个基类是混淆的（`BaseSettingItem` / `SettingItemClassesProvider` / `SettingLocation`），
+ * 必须靠 DexKit 猜。早先版本要求 [SettingsDexFinder] 把所有类都猜出来才继续，
+ * 只要它漏了一个（例如 provider 判定条件随版本变化）整条注入链就直接返回失败、用户看不到入口，
+ * 所以这里对「不混淆的那批」全部按真实类名兜底，只在真正无法确定时才报错。
  */
 object WeSettingsInjector {
 
@@ -33,6 +42,20 @@ object WeSettingsInjector {
     private const val ENTRY_KEY = "SettingGroup_Main_WxScript"
     private const val ENTRY_TITLE = "微信脚本"
     private const val ENTRY_GROUP = "插件"
+
+    // 这些类名在 8.0.49+ 的设置页里没有混淆，可以直接反射。
+    private const val CLS_SETTING_GROUP_MAIN =
+        "com.tencent.mm.plugin.setting.ui.setting_new.settings.SettingGroupMain"
+    private const val CLS_SETTING_ADDITION_HEADER_SEARCH =
+        "com.tencent.mm.plugin.setting.ui.setting_new.settings.SettingAdditionHeaderSearch"
+    private const val CLS_SETTING_GROUP_PERSONAL_INFO =
+        "com.tencent.mm.plugin.setting.ui.setting_new.settings.SettingGroupPersonalInfo"
+    private const val CLS_SETTING_GROUP_ACCOUNT_INFO =
+        "com.tencent.mm.plugin.setting.ui.setting_new.settings.SettingGroupAccountInfo"
+    private const val CLS_BASE_SETTING_PREF_UI =
+        "com.tencent.mm.plugin.setting.ui.setting_new.base.BaseSettingPrefUI"
+    private const val CLS_BASE_SETTING_UI =
+        "com.tencent.mm.plugin.setting.ui.setting_new.base.BaseSettingUI"
 
     @Volatile
     private var installed = false
@@ -52,6 +75,11 @@ object WeSettingsInjector {
     var installedKey: String? = null
         private set
 
+    /** 锚点解析明细（诊断页可读，便于定位是哪一项没解析到）。 */
+    @Volatile
+    var anchorDetail: String = ""
+        private set
+
     fun install(hostContext: Context, dexKit: DexKitBridge, classLoader: ClassLoader): Boolean {
         if (installed) return true
         lastError = null
@@ -59,44 +87,78 @@ object WeSettingsInjector {
             val finder = SettingsDexFinder(dexKit, classLoader, hostContext)
             finder.resolveAll(true)
 
-            val missing = buildList {
-                if (finder.settingGroupMainClass == null) add("SettingGroupMain")
-                if (finder.baseSettingItemClass == null) add("BaseSettingItem")
-                if (finder.settingItemClassesProviderClass == null) add("SettingItemClassesProvider")
-                if (finder.settingLocationClass == null) add("SettingLocation")
-                if (finder.baseSettingPrefUIClass == null) add("BaseSettingPrefUI")
-                if (finder.baseSettingUIClass == null) add("BaseSettingUI")
-                if (finder.settingGroupAccountInfoClass == null) add("SettingGroupAccountInfo")
-                if (finder.settingGroupPersonalInfoClass == null) add("SettingGroupPersonalInfo")
-                if (finder.settingAdditionHeaderSearchClass == null) add("SettingAdditionHeaderSearch")
+            // 不混淆的一批：finder 拿不到就用真实类名兜底。
+            val groupMain = finder.settingGroupMainClass
+                ?: hostClassOrNull(classLoader, CLS_SETTING_GROUP_MAIN)
+            val additionHeader = finder.settingAdditionHeaderSearchClass
+                ?: hostClassOrNull(classLoader, CLS_SETTING_ADDITION_HEADER_SEARCH)
+            val personalInfo = finder.settingGroupPersonalInfoClass
+                ?: hostClassOrNull(classLoader, CLS_SETTING_GROUP_PERSONAL_INFO)
+            val accountInfo = finder.settingGroupAccountInfoClass
+                ?: hostClassOrNull(classLoader, CLS_SETTING_GROUP_ACCOUNT_INFO)
+            val basePrefUI = finder.baseSettingPrefUIClass
+                ?: hostClassOrNull(classLoader, CLS_BASE_SETTING_PREF_UI)
+            val baseUI = finder.baseSettingUIClass
+                ?: hostClassOrNull(classLoader, CLS_BASE_SETTING_UI)
+
+            // 真正混淆、只能靠 DexKit 猜的三个基类。
+            val baseItem = finder.baseSettingItemClass
+            val provider = finder.settingItemClassesProviderClass
+            val locationClass = finder.settingLocationClass
+
+            anchorDetail = buildString {
+                append("groupMain=${groupMain?.simpleName ?: "null"}")
+                append(", addHeader=${additionHeader?.simpleName ?: "null"}")
+                append(", personalInfo=${personalInfo?.simpleName ?: "null"}")
+                append(", accountInfo=${accountInfo?.simpleName ?: "null"}")
+                append(", basePrefUI=${basePrefUI?.simpleName ?: "null"}")
+                append(", baseUI=${baseUI?.simpleName ?: "null"}")
+                append(", baseItem=${baseItem?.simpleName ?: "null"}")
+                append(", provider=${provider?.simpleName ?: "null"}")
+                append(", location=${locationClass?.simpleName ?: "null"}")
             }
-            if (missing.isNotEmpty()) {
-                lastError = "设置页锚点缺失: " + missing.joinToString()
+
+            val missing = buildList {
+                if (groupMain == null) add("SettingGroupMain")
+                if (personalInfo == null) add("SettingGroupPersonalInfo")
+                if (accountInfo == null) add("SettingGroupAccountInfo")
+                if (baseItem == null) add("BaseSettingItem")
+                if (provider == null) add("SettingItemClassesProvider")
+                if (locationClass == null) add("SettingLocation")
+                if (basePrefUI == null) add("BaseSettingPrefUI")
+                if (baseUI == null) add("BaseSettingUI")
+            }
+            if (missing.isNotEmpty() || groupMain == null || personalInfo == null ||
+                accountInfo == null || baseItem == null || provider == null ||
+                locationClass == null || basePrefUI == null || baseUI == null
+            ) {
+                lastError = "设置页锚点缺失: " + missing.joinToString() + "｜" + anchorDetail
+                status = "失败：" + lastError
                 WeLogger.w(TAG, lastError!!)
                 return@runCatching false
             }
 
             val resourceGetString = findResourceHelperGetString(dexKit, classLoader)
             if (resourceGetString == null) {
-                lastError = "找不到 ResourceHelper.getString 方法"
+                lastError = "找不到 ResourceHelper.getString 方法（标题资源 id 无法映射成文字）"
                 WeLogger.w(TAG, lastError!!)
                 return@runCatching false
             }
 
-            val names = resolveMethodNames(finder) ?: run {
-                lastError = "设置项方法名推导失败"
+            val names = resolveMethodNames(accountInfo, personalInfo, locationClass, finder) ?: run {
+                lastError = "设置项方法名推导失败｜" + anchorDetail
                 WeLogger.w(TAG, lastError!!)
                 return@runCatching false
             }
 
             val manager = WeChatSettingsManager(
-                classBaseSettingItem = finder.baseSettingItemClass,
+                classBaseSettingItem = baseItem,
                 // 不提供开关项：占位传基类即可，switch 相关方法名传空串（不会被调用）
-                classBaseSettingSwitchItem = finder.baseSettingItemClass,
-                classSettingLocation = finder.settingLocationClass,
-                classSettingItemClassesProvider = finder.settingItemClassesProviderClass,
-                classBaseSettingPrefUI = finder.baseSettingPrefUIClass,
-                classBaseSettingUI = finder.baseSettingUIClass,
+                classBaseSettingSwitchItem = baseItem,
+                classSettingLocation = locationClass,
+                classSettingItemClassesProvider = provider,
+                classBaseSettingPrefUI = basePrefUI,
+                classBaseSettingUI = baseUI,
                 methodResourceHelperGetStringById = resourceGetString,
                 mGetPageGroupItemClass = names.getValue("pageGroupItemClass"),
                 mGetLevel = names.getValue("level"),
@@ -109,9 +171,9 @@ object WeSettingsInjector {
                 mGetSwitchProperty = "",
             )
 
-            val providerMethods = findProviderMethods(finder)
+            val providerMethods = findProviderMethods(provider)
             if (providerMethods.isEmpty()) {
-                lastError = "设置项映射方法为空（provider=${finder.settingItemClassesProviderClass?.name}）"
+                lastError = "设置项映射方法为空（provider=${provider.name}）｜" + anchorDetail
                 status = "失败：" + lastError
                 WeLogger.w(TAG, lastError!!)
                 return@runCatching false
@@ -123,41 +185,27 @@ object WeSettingsInjector {
                 title = ENTRY_TITLE
                 groupTitle = ENTRY_GROUP
                 level = 1
-                pageClass = finder.settingGroupMainClass
-                parentClass = finder.settingAdditionHeaderSearchClass
-                childClass = finder.settingGroupPersonalInfoClass
+                pageClass = groupMain
+                parentClass = additionHeader ?: groupMain
+                childClass = personalInfo
                 onClick = { activity -> openSettings(activity) }
             }
             manager.install(providerMethods)
             installed = true
             installedKey = ENTRY_KEY
-            status = "已注入 · key=$ENTRY_KEY · provider=${finder.settingItemClassesProviderClass?.simpleName}"
-            WeLogger.i(TAG, "settings entry installed (key=$ENTRY_KEY)")
+            status = "已注入 · key=$ENTRY_KEY · provider=${provider.simpleName}"
+            WeLogger.i(TAG, "settings entry installed (key=$ENTRY_KEY)｜$anchorDetail")
             true
         }.getOrElse {
-            lastError = it.message ?: it.javaClass.simpleName
+            lastError = (it.message ?: it.javaClass.simpleName) + "｜" + anchorDetail
             status = "失败：" + lastError
             WeLogger.e(TAG, "settings entry install failed", it)
             false
         }
     }
 
-    /**
-     * 找出「无参且返回 Map」的方法。
-     *
-     * 微信把每个设置页的 item class 收在一张 Map 里，插件只要往这张表里加自己的 class 就能出现；
-     * 但具体是哪个方法返回这张表，每个版本都不同（8.0.80 上并非类里第一个方法），
-     * 所以这里全量筛选，注入时每个都 hook 一遍（只有真的返回 Map 的那次会生效）。
-     */
-    private fun findProviderMethods(finder: SettingsDexFinder): List<Method> {
-        val provider = finder.settingItemClassesProviderClass ?: return emptyList()
-        val candidates = provider.declaredMethods.filter { method ->
-            method.parameterCount == 0 && Map::class.java.isAssignableFrom(method.returnType)
-        }
-        if (candidates.isNotEmpty()) return candidates
-        // 兜底：返回类型不是 Map 但实现类可能返回 Map（接口签名宽泛）
-        return provider.declaredMethods.filter { it.parameterCount == 0 }
-    }
+    private fun hostClassOrNull(loader: ClassLoader, name: String): Class<*>? =
+        runCatching { Class.forName(name, false, loader) }.getOrNull()
 
     private fun openSettings(activity: Activity) {
         runCatching {
@@ -192,25 +240,35 @@ object WeSettingsInjector {
      * - 参数 3 个的 → 点击回调
      * - 返回 SettingLocation 的 → 所在位置
      */
-    private fun resolveMethodNames(finder: SettingsDexFinder): Map<String, String>? {
-        val accountInfo = finder.settingGroupAccountInfoClass ?: return null
-        val personalInfo = finder.settingGroupPersonalInfoClass ?: return null
-        val locationClass = finder.settingLocationClass ?: return null
+    private fun resolveMethodNames(
+        accountInfo: Class<*>,
+        personalInfo: Class<*>,
+        locationClass: Class<*>,
+        finder: SettingsDexFinder,
+    ): Map<String, String>? {
         val methods = accountInfo.declaredMethods.toList()
 
-        val pageGroupItemClass = methods.firstOrNull { it.returnType == Class::class.java }?.name ?: return null
-        val level = finder.methodAccountInfoReturns1?.name ?: return null
+        val pageGroupItemClass = methods.firstOrNull { it.returnType == Class::class.java }?.name
+            ?: return null
+        val level = finder.methodAccountInfoReturns1?.name
+            ?: methods.firstOrNull {
+                (it.returnType == Int::class.javaPrimitiveType || it.returnType == java.lang.Integer::class.java) &&
+                    it.parameterCount == 1
+            }?.name
+            ?: return null
         val onClick = methods.firstOrNull { it.parameterCount == 3 }?.name ?: return null
         val key = finder.methodAccountInfoSettingKey?.name
-            ?: methods.firstOrNull { it.returnType == String::class.java && !Modifier.isStatic(it.modifiers) }?.name
+            ?: methods.firstOrNull {
+                it.returnType == String::class.java && !Modifier.isStatic(it.modifiers)
+            }?.name
             ?: return null
         val settingLocation = methods.lastOrNull { it.returnType == locationClass }?.name ?: return null
         val nameResId = methods.lastOrNull {
-            (it.returnType == Int::class.javaPrimitiveType || it.returnType == Integer::class.java) &&
+            (it.returnType == Int::class.javaPrimitiveType || it.returnType == java.lang.Integer::class.java) &&
                 it.name != level
         }?.name ?: return null
         val groupNameResId = personalInfo.declaredMethods.firstOrNull {
-            it.returnType == Integer::class.java
+            it.returnType == java.lang.Integer::class.java
         }?.name ?: return null
 
         return mapOf(
@@ -222,5 +280,21 @@ object WeSettingsInjector {
             "nameResId" to nameResId,
             "groupNameResId" to groupNameResId,
         )
+    }
+
+    /**
+     * 找出「无参且返回 Map」的方法。
+     *
+     * 微信把每个设置页的 item class 收在一张 Map 里，插件只要往这张表里加自己的 class 就能出现；
+     * 具体是哪个方法返回这张表每个版本都不同，所以这里全量筛选、注入时每个都 hook 一遍
+     * （只有真的返回 Map 的那次会生效）。
+     */
+    private fun findProviderMethods(provider: Class<*>): List<Method> {
+        val candidates = provider.declaredMethods.filter { method ->
+            method.parameterCount == 0 && Map::class.java.isAssignableFrom(method.returnType)
+        }
+        if (candidates.isNotEmpty()) return candidates
+        // 兜底：返回类型不是 Map 但实现类可能返回 Map（接口签名宽泛）
+        return provider.declaredMethods.filter { it.parameterCount == 0 }
     }
 }
