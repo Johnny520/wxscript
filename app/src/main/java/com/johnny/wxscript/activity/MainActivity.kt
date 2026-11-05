@@ -22,7 +22,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -124,13 +126,17 @@ private fun HomeScreen() {
         Modifier
             .fillMaxSize()
             .background(BG)
+            // Android 15+ 强制 edge-to-edge，这里自己留出状态栏/手势条安全区，
+            // 否则标题会被状态栏压住、右上角「⋯」点不到。
+            .statusBarsPadding()
+            .navigationBarsPadding()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp)
             .padding(bottom = 28.dp),
     ) {
         // ── 顶部标题 ──
         Row(
-            Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 10.dp),
+            Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(

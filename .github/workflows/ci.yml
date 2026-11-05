@@ -30,13 +30,13 @@ jobs:
 
       # 签名由 Gradle 侧从 KEYSTORE_BASE64 解出临时 jks（见 app/build.gradle.kts），
       # 这里只需把 secrets 透出成环境变量给 Gradle 用。
-      - name: Build (debug + signed release)
+      - name: Build (signed release)
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
-        run: ./gradlew assembleDebug assembleRelease --stacktrace
+        run: ./gradlew assembleRelease --stacktrace
 
       - name: Verify release signature
         run: |
@@ -49,7 +49,7 @@ jobs:
       - name: Collect APKs
         run: |
           mkdir -p out
-          find app/build/outputs/apk -name '*.apk' -exec cp {} out/ \;
+          find app/build/outputs/apk/release -name '*.apk' -exec cp {} out/ \;
           ls -la out
 
       - name: Upload APKs
