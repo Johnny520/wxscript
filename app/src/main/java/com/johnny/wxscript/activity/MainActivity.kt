@@ -264,12 +264,17 @@ private fun HomeScreen() {
                 },
                 onClick = {
                     if (!HostLogViewer.isGranted()) {
-                        HostLogViewer.requestGrant(context)
-                        Toast.makeText(
-                            context,
-                            "请允许「所有文件访问」，返回后再次点击",
-                            Toast.LENGTH_LONG,
-                        ).show()
+                        val activity = context as? android.app.Activity
+                        if (activity != null) {
+                            HostLogViewer.requestGrant(activity)
+                            Toast.makeText(
+                                context,
+                                "请允许「所有文件访问」，返回后再次点击",
+                                Toast.LENGTH_LONG,
+                            ).show()
+                        } else {
+                            Toast.makeText(context, "当前界面无法申请权限", Toast.LENGTH_SHORT).show()
+                        }
                     } else {
                         val text = HostLogViewer.summary() + "\n\n" + HostLogViewer.tail()
                         android.app.AlertDialog.Builder(context)
