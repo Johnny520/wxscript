@@ -17,7 +17,7 @@ import java.io.File
  * 本身都可能因为入口代码没跑到而不可见，于是形成死角 —— 用户看不到入口、也就看不到诊断。
  * 这里让模块 App（独立进程）直接读微信的外部数据目录：
  *
- * `/storage/emulated/0/Android/data/com.tencent.mm/{TAG}/logs/*.log`
+ * `/storage/emulated/0/Android/data/com.tencent.mm/{TAG}/logs/xxx.log（每天一个文件）`
  *
  * 该目录属于微信，Android 11+ 需要「所有文件访问」权限（MANAGE_EXTERNAL_STORAGE），
  * 所以调用前先确认 [isGranted]，未授权时用 [requestGrant] 引导。
