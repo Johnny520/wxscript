@@ -16,7 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
-import com.johnny.wxscript.xposed.XC_MethodHook;
+import de.robv.android.xposed.XC_MethodHook;
 
 /**
  * 微信消息事件 API。

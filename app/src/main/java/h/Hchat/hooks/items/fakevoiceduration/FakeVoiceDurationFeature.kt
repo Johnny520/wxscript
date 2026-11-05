@@ -1,7 +1,7 @@
 package h.Hchat.hooks.items.fakevoiceduration
 
 import android.content.Context
-import com.johnny.wxscript.xposed.XC_MethodHook
+import de.robv.android.xposed.XC_MethodHook
 import h.Hchat.dexkit.DexMethodCache
 import h.Hchat.event.Events
 import h.Hchat.hooks.core.BaseFeature

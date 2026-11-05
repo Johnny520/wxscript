@@ -19,8 +19,8 @@ android {
         applicationId = "com.johnny.wxscript"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 16
-        versionName = "v1.7.9"
+        versionCode = 17
+        versionName = "v1.8.0"
 
         buildConfigField("String", "TAG", "\"WxScript\"")
         buildConfigField("String", "HOST_PACKAGE", "\"com.tencent.mm\"")
@@ -112,6 +112,9 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
 
 dependencies {
     // libxposed 102：legacy de.robv API 在 102 下被框架封禁，入口与 hook 全走 libxposed
+    // legacy Xposed API（assets/xposed_init 入口，和 WCX 同一套；LSPosed 上实测可用）
+    compileOnly(files("libs/xposed-api-82.jar"))
+    // 保留 libxposed api：模块内的 102 兼容层仍需要编译期类型（运行时不使用）
     compileOnly("io.github.libxposed:api:102.0.0")
     compileOnly(project(":libs:common:stubs"))
 

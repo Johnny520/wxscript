@@ -65,9 +65,14 @@ jobs:
           echo "-- module.prop --"
           unzip -p "$APK" META-INF/xposed/module.prop || echo "MISSING module.prop"
           echo "-- entry class in dex --"
-          for i in 0 1 2 3 4; do
-            unzip -p "$APK" classes${i:+$i}.dex 2>/dev/null | strings | grep -m1 "com/johnny/wxscript/entry/LibXposedEntry" && break
-          done || echo "MISSING entry class"
+          python3 - "$APK" <<'PY'
+          import sys, zipfile
+          apk = sys.argv[1]
+          needle = b"com/johnny/wxscript/entry/LibXposedEntry"
+          z = zipfile.ZipFile(apk)
+          hits = [n for n in z.namelist() if n.startswith("classes") and n.endswith(".dex") and needle in z.read(n)]
+          print("FOUND in:", hits if hits else "MISSING entry class")
+          PY
 
       - name: Upload APKs
         uses: actions/upload-artifact@v4

@@ -9,7 +9,7 @@ import com.johnny.wxscript.constants.PackageNames
 import com.johnny.wxscript.utils.HostInfo
 import com.johnny.wxscript.utils.WeLogger
 import com.johnny.wxscript.utils.hookAfterDirectly
-import com.johnny.wxscript.xposed.XposedHelpers
+import de.robv.android.xposed.XposedHelpers
 import dev.ujhhgtg.reflekt.reflekt
 
 /**

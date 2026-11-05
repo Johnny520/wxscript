@@ -3,8 +3,8 @@
 package com.johnny.wxscript.features.core
 
 import androidx.compose.runtime.Composable
-import com.johnny.wxscript.xposed.XC_MethodHook
-import com.johnny.wxscript.xposed.XposedBridge
+import de.robv.android.xposed.XC_MethodHook
+import de.robv.android.xposed.XposedBridge
 import dev.ujhhgtg.reflekt.reflected.BaseReflectedMethod
 import dev.ujhhgtg.reflekt.reflected.ReflectedConstructor
 import dev.ujhhgtg.reflekt.reflekt

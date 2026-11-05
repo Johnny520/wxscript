@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
-import com.johnny.wxscript.xposed.XC_MethodHook;
+import de.robv.android.xposed.XC_MethodHook;
 
 /**
  * 微信网络发包器缓存与发包封装。

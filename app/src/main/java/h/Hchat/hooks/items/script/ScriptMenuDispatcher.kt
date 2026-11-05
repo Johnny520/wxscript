@@ -12,7 +12,7 @@ import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
 import android.widget.BaseAdapter
-import com.johnny.wxscript.xposed.XC_MethodHook
+import de.robv.android.xposed.XC_MethodHook
 import h.Hchat.dexkit.SettingsDexFinder
 import h.Hchat.hooks.api.core.WeChatApis
 import h.Hchat.hooks.api.message.SingleMessageMenuLocator

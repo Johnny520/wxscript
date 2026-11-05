@@ -11,7 +11,7 @@ import org.json.JSONObject
 import java.lang.reflect.Constructor
 import java.util.Collections
 import java.util.IdentityHashMap
-import com.johnny.wxscript.xposed.XC_MethodHook
+import de.robv.android.xposed.XC_MethodHook
 
 /**
  * 微信普通转账领取/退回 API。

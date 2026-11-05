@@ -1,7 +1,7 @@
 package me.hd.wauxv.hook
 
 import androidx.annotation.Keep
-import com.johnny.wxscript.xposed.XC_MethodHook
+import de.robv.android.xposed.XC_MethodHook
 
 @Keep
 class HookHandle(val unhook: XC_MethodHook.Unhook) {

@@ -1,6 +1,6 @@
 package com.johnny.wxscript.features.items.scripting_java
 
-import com.johnny.wxscript.xposed.XC_MethodHook
+import de.robv.android.xposed.XC_MethodHook
 import com.johnny.wxscript.features.core.ApiFeature
 import com.johnny.wxscript.features.core.Feature
 import com.johnny.wxscript.utils.WeLogger

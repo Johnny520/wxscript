@@ -7,9 +7,9 @@ import android.os.Handler
 import android.os.Looper
 import android.view.View
 import com.johnny.wxscript.utils.WeLogger
-import com.johnny.wxscript.xposed.XC_MethodHook
-import com.johnny.wxscript.xposed.XposedBridge
-import com.johnny.wxscript.xposed.XposedHelpers
+import de.robv.android.xposed.XC_MethodHook
+import de.robv.android.xposed.XposedBridge
+import de.robv.android.xposed.XposedHelpers
 import h.Hchat.hooks.api.core.WeChatApis
 import h.Hchat.hooks.core.FeatureContext
 import h.Hchat.hooks.core.HookRegistry

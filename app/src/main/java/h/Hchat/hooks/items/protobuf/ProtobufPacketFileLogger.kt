@@ -1,7 +1,7 @@
 package h.Hchat.hooks.items.protobuf
 
 import android.content.Context
-import com.johnny.wxscript.xposed.XposedBridge
+import de.robv.android.xposed.XposedBridge
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Calendar

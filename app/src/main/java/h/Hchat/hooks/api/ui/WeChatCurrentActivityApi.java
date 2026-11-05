@@ -8,7 +8,7 @@ import h.Hchat.utils.KavaReflector;
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Method;
 
-import com.johnny.wxscript.xposed.XC_MethodHook;
+import de.robv.android.xposed.XC_MethodHook;
 
 /**
  * 当前微信 Activity 跟踪 API。

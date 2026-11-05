@@ -12,7 +12,7 @@ import h.Hchat.utils.KavaReflector;
 import java.lang.reflect.Method;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-import com.johnny.wxscript.xposed.XC_MethodHook;
+import de.robv.android.xposed.XC_MethodHook;
 
 /**
  * 当前聊天页 API。

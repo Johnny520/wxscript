@@ -15,7 +15,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-import com.johnny.wxscript.xposed.XC_MethodHook;
+import de.robv.android.xposed.XC_MethodHook;
 
 /**
  * 微信 SqliteDB wrapper 变更与查询监听 API。
@@ -266,7 +266,7 @@ public final class WeChatDatabaseListenerApi {
                 continue;
             }
             try {
-                HookRegistry.get().hook(method, new XC_MethodHook(com.johnny.wxscript.xposed.callbacks.XCallback.PRIORITY_LOWEST) {
+                HookRegistry.get().hook(method, new XC_MethodHook(de.robv.android.xposed.callbacks.XCallback.PRIORITY_LOWEST) {
                     @Override
                     protected void beforeHookedMethod(MethodHookParam param) {
                         if (query) {

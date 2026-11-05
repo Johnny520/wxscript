@@ -4,7 +4,7 @@ import android.app.Activity
 import android.content.Context
 import androidx.annotation.Keep
 import com.android.dx.stock.ProxyBuilder
-import com.johnny.wxscript.xposed.XC_MethodHook
+import de.robv.android.xposed.XC_MethodHook
 import dev.ujhhgtg.reflekt.reflekt
 import dev.ujhhgtg.reflekt.utils.createInstance
 import dev.ujhhgtg.reflekt.utils.toClass

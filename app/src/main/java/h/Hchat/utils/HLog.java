@@ -2,7 +2,7 @@ package h.Hchat.utils;
 
 import com.johnny.wxscript.utils.WeLogger;
 
-import com.johnny.wxscript.xposed.XposedBridge;
+import de.robv.android.xposed.XposedBridge;
 
 /**
  * LSPosed treats Throwable logs as error logs. Use this only for real failures.

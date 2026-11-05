@@ -1,7 +1,7 @@
 package h.Hchat.hooks.api.message
 
 import android.text.TextUtils
-import com.johnny.wxscript.xposed.XC_MethodHook
+import de.robv.android.xposed.XC_MethodHook
 import h.Hchat.dexkit.DexFinder
 import h.Hchat.hooks.core.HookRegistry
 import h.Hchat.hooks.api.media.WeChatInternalServices

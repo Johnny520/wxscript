@@ -3,7 +3,7 @@ package com.johnny.wxscript.features.api.ui
 import android.app.Activity
 import android.content.ContextWrapper
 import android.content.Intent
-import com.johnny.wxscript.xposed.XC_MethodHook
+import de.robv.android.xposed.XC_MethodHook
 import com.johnny.wxscript.BuildConfig
 import com.johnny.wxscript.features.core.ApiFeature
 import com.johnny.wxscript.features.core.Feature
