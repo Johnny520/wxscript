@@ -50,6 +50,15 @@ class LibXposedEntry : XposedModule() {
                             com.johnny.wxscript.features.api.ui.WxScriptFloatingEntry.status,
                     )
                 }.onFailure { XposedRuntime.log(6, "[$TAG] floating entry failed: ${it.message}") }
+
+                runCatching {
+                    com.johnny.wxscript.features.api.ui.WeSettingsRowInjector.install(hostClassLoader)
+                    XposedRuntime.log(
+                        4,
+                        "[$TAG] settings row: " +
+                            com.johnny.wxscript.features.api.ui.WeSettingsRowInjector.status,
+                    )
+                }.onFailure { XposedRuntime.log(6, "[$TAG] settings row failed: ${it.message}") }
             }, 2_000L)
 
             XposedBridge.hookAllMethods(

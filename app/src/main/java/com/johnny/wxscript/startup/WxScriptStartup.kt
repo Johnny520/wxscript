@@ -130,6 +130,11 @@ object WxScriptStartup {
                 com.johnny.wxscript.features.hchat.WxScriptPlusMenuEntry.install(application)
                 WeLogger.i(TAG, "加号入口：" + com.johnny.wxscript.features.hchat.WxScriptPlusMenuEntry.status)
             }.onFailure { WeLogger.e(TAG, "加号入口安装失败", it) }
+
+            runCatching {
+                com.johnny.wxscript.features.api.ui.WeSettingsRowInjector.install(application.classLoader)
+                WeLogger.i(TAG, "设置页入口：" + com.johnny.wxscript.features.api.ui.WeSettingsRowInjector.status)
+            }.onFailure { WeLogger.e(TAG, "设置页入口安装失败", it) }
         }, 3_000L)
     }
 

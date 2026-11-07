@@ -48,6 +48,7 @@ import kotlinx.coroutines.withContext
 import com.johnny.wxscript.constants.Preferences
 import com.johnny.wxscript.features.hchat.WxScriptPlusMenuEntry
 import com.johnny.wxscript.features.api.ui.WxScriptFloatingEntry
+import com.johnny.wxscript.features.api.ui.WeSettingsRowInjector
 
 /** 诊断项：名称 / 状态 / 详情。 */
 private data class DiagItem(val name: String, val state: DotState, val detail: String)
@@ -335,6 +336,17 @@ private fun collectDiagnostics(context: android.content.Context): List<DiagItem>
             else -> DotState.RUNNING
         },
         WxScriptFloatingEntry.status,
+    )
+
+    items += DiagItem(
+        "微信设置页入口（View 注入）",
+        when {
+            WeSettingsRowInjector.installed -> DotState.OK
+            !Preferences.floatingEntryEnabled -> DotState.IDLE
+            WeSettingsRowInjector.status.startsWith("失败") -> DotState.FAIL
+            else -> DotState.RUNNING
+        },
+        WeSettingsRowInjector.status,
     )
 
     items += DiagItem(
