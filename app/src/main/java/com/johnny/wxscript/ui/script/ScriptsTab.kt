@@ -78,6 +78,7 @@ fun ScriptsTab(
     onEdit: (String) -> Unit,
     onLogs: (String) -> Unit,
     onDiagnostics: () -> Unit,
+    onOpenLogs: () -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -244,6 +245,10 @@ fun ScriptsTab(
 
         item {
             HorizontalDivider(Modifier.padding(top = 12.dp))
+            TextButton(
+                onClick = onOpenLogs,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            ) { Text("运行日志 / 崩溃日志 / 微信侧日志") }
             TextButton(
                 onClick = onDiagnostics,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),

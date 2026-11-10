@@ -244,15 +244,7 @@ object WeSettingsInjector {
         runCatching { Class.forName(name, false, loader) }.getOrNull()
 
     private fun openSettings(activity: Activity) {
-        if (com.johnny.wxscript.ui.SettingsDialogHost.show(activity)) {
-            WeLogger.i(TAG, "open settings via dialog host")
-            return
-        }
-        runCatching {
-            activity.startActivity(Intent(activity, SettingsActivity::class.java))
-        }.onFailure {
-            WeLogger.e(TAG, "open SettingsActivity failed", it)
-        }
+        com.johnny.wxscript.ui.ScriptUiLauncher.open(activity, "settings-item")
     }
 
     /** `MicroMsg.ResourceHelper` 的 getString(resId) —— 用于把动态资源 id 映射成中文标题。 */

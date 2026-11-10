@@ -32,6 +32,7 @@ fun ScriptPluginsPage(
     onEdit: (String) -> Unit,
     onLogs: (String) -> Unit,
     onDiagnostics: () -> Unit,
+    onOpenLogs: () -> Unit,
 ) {
     if (!ScriptData.isHostProcess()) {
         val context = LocalContext.current
@@ -58,5 +59,5 @@ fun ScriptPluginsPage(
         }
         return
     }
-    ScriptsTab(onEdit = onEdit, onLogs = onLogs, onDiagnostics = onDiagnostics)
+    ScriptsTab(onEdit = onEdit, onLogs = onLogs, onDiagnostics = onDiagnostics, onOpenLogs = onOpenLogs)
 }

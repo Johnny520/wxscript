@@ -54,8 +54,10 @@ object InjectSelfCheck {
         appendLine()
 
         // ── 入口类 ──
-        appendLine("【入口类可加载性】")
-        val loader = InjectSelfCheck::class.java.classLoader
+        // 注意：不能用 Class.forName 判断。standard 版里入口类继承 io.github.libxposed.api.XposedModule，
+        // 这个类由框架在**微信进程**注入时提供，模块 App 自己的进程里没有 → forName 必然失败，
+        // 会出现「类不存在」的误报。这里直接在自己 APK 的 dex 里搜类名字节，才是真实结论。
+        appendLine("【入口类是否打进 APK】")
         val declared = entries
             .filterKeys { it.endsWith("java_init.list") || it.endsWith("xposed_init") }
             .values
@@ -65,9 +67,11 @@ object InjectSelfCheck {
         if (declared.isEmpty()) {
             appendLine("（元数据里没有入口类名）")
         } else {
+            val dexBlob = readDexBytes(apk)
             declared.forEach { name ->
-                val ok = runCatching { Class.forName(name, false, loader) }.isSuccess
-                appendLine((if (ok) "✅ " else "❌ ") + name + if (ok) "" else "  （类不存在：被 R8 删了或名字被改）")
+                val needle = name.replace('.', '/').toByteArray()
+                val found = dexBlob != null && indexOf(dexBlob, needle) >= 0
+                appendLine((if (found) "✅ " else "❌ ") + name + if (found) "" else "  （dex 里找不到：被 R8 删了或名字被改）")
             }
         }
         appendLine()
@@ -99,6 +103,33 @@ object InjectSelfCheck {
             appendLine("✅ 已注入，最近记录：")
             heartbeat.trim().lines().takeLast(12).forEach { appendLine("  " + it) }
         }
+    }
+
+    /** 把 APK 里所有 classesN.dex 拼成一块（入口类名是 ASCII，直接按字节搜即可）。 */
+    private fun readDexBytes(apkPath: String): ByteArray? = runCatching {
+        ZipFile(apkPath).use { zip ->
+            val out = java.io.ByteArrayOutputStream()
+            zip.entries().asSequence()
+                .filter { it.name.startsWith("classes") && it.name.endsWith(".dex") }
+                .forEach { entry -> out.write(zip.getInputStream(entry).use { it.readBytes() }) }
+            out.toByteArray()
+        }
+    }.getOrNull()
+
+    private fun indexOf(haystack: ByteArray, needle: ByteArray): Int {
+        if (needle.isEmpty() || haystack.size < needle.size) return -1
+        val first = needle[0]
+        var i = 0
+        val limit = haystack.size - needle.size
+        while (i <= limit) {
+            if (haystack[i] == first) {
+                var j = 1
+                while (j < needle.size && haystack[i + j] == needle[j]) j++
+                if (j == needle.size) return i
+            }
+            i++
+        }
+        return -1
     }
 
     /** 读 APK 里所有 xposed 入口相关文件的原文。 */

@@ -172,6 +172,7 @@ internal fun WxScriptRoot() {
                         onEdit = { pluginId -> route = WxRoute.Editor(pluginId) },
                         onLogs = { route = WxRoute.Logs },
                         onDiagnostics = openDiagnostics,
+                        onOpenLogs = openLogs,
                     )
                     2 -> MarketTab(
                         onOpenDetail = { id -> route = WxRoute.MarketDetail(id) },

@@ -125,6 +125,12 @@ private fun HomeScreen() {
     val host = remember { readHostApp(context) }
     var menuOpen by remember { mutableStateOf(false) }
     var launcherHidden by remember { mutableStateOf(!isLauncherEnabled(context)) }
+    var settingsEntry by remember {
+        mutableStateOf(runCatching { com.johnny.wxscript.constants.Preferences.settingsEntryEnabled }.getOrDefault(true))
+    }
+    var floatingEntry by remember {
+        mutableStateOf(runCatching { com.johnny.wxscript.constants.Preferences.floatingEntryEnabled }.getOrDefault(false))
+    }
 
     Column(
         Modifier
@@ -242,6 +248,32 @@ private fun HomeScreen() {
                 }
                 Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null, tint = Color(0xFFB9BEC7))
             }
+        }
+
+        GroupTitle("入口设置")
+
+        SectionCard {
+            ActionRow(
+                icon = Icons.Filled.Chat,
+                title = "微信设置页入口：" + if (settingsEntry) "已开启" else "已关闭",
+                subtitle = "微信 → 我 → 设置，页面底部「微信脚本」卡片（推荐的主入口）",
+                onClick = {
+                    settingsEntry = !settingsEntry
+                    runCatching { com.johnny.wxscript.constants.Preferences.settingsEntryEnabled = settingsEntry }
+                    Toast.makeText(context, "已" + (if (settingsEntry) "开启" else "关闭") + "，强停微信后生效", Toast.LENGTH_SHORT).show()
+                },
+            )
+            Divider()
+            ActionRow(
+                icon = Icons.Filled.Visibility,
+                title = "悬浮球入口：" + if (floatingEntry) "已开启" else "已关闭",
+                subtitle = "微信主界面右侧的「脚本」小按钮（默认关闭，避免挡到会话列表）",
+                onClick = {
+                    floatingEntry = !floatingEntry
+                    runCatching { com.johnny.wxscript.constants.Preferences.floatingEntryEnabled = floatingEntry }
+                    Toast.makeText(context, "已" + (if (floatingEntry) "开启" else "关闭") + "，强停微信后生效", Toast.LENGTH_SHORT).show()
+                },
+            )
         }
 
         GroupTitle("快捷操作")

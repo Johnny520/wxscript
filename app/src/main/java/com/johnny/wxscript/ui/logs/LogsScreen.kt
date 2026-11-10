@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
@@ -42,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.johnny.wxscript.ui.components.SearchField
 import com.johnny.wxscript.ui.components.StateBox
+import com.johnny.wxscript.ui.HostLogViewer
 import com.johnny.wxscript.utils.CrashRecorder
 import com.johnny.wxscript.utils.WeLogger
 import kotlinx.coroutines.Dispatchers
@@ -72,9 +75,83 @@ fun LogsScreen(onBack: () -> Unit) {
             FilterChip(tab == 0, { tab = 0 }, { Text("实时控制台") })
             Spacer(Modifier.width(6.dp))
             FilterChip(tab == 1, { tab = 1 }, { Text("崩溃文件") })
+            Spacer(Modifier.width(6.dp))
+            FilterChip(tab == 2, { tab = 2 }, { Text("微信侧") })
             Spacer(Modifier.width(8.dp))
         }
-        if (tab == 0) ConsoleTab() else CrashTab()
+        when (tab) {
+            0 -> ConsoleTab()
+            1 -> CrashTab()
+            else -> HostTab()
+        }
+    }
+}
+
+/**
+ * 微信侧：模块在**微信进程**里写下的东西。
+ *
+ * 这个 Tab 是排查「微信里没有入口 / 点了闪退 / 完全没反应」的主战场：
+ * 注入心跳、微信进程的运行日志、微信进程的崩溃文件都在这里。
+ */
+@Composable
+private fun HostTab() {
+    val context = LocalContext.current
+    var version by remember { mutableIntStateOf(0) }
+    var showView by remember { mutableStateOf(false) }
+    var viewText by remember { mutableStateOf("") }
+    val summary = remember(version) { runCatching { HostLogViewer.summary() }.getOrElse { "读取失败：" + it.message } }
+    val crashFiles = remember(version) { HostLogViewer.hostCrashFiles() }
+
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp),
+    ) {
+        if (!HostLogViewer.isGranted()) {
+            Text(
+                "需要「所有文件访问」权限才能读取微信侧日志",
+                color = Color(0xFFE5484D),
+                fontSize = 12.sp,
+            )
+            TextButton(onClick = {
+                (context as? android.app.Activity)?.let { HostLogViewer.requestGrant(it) }
+            }) { Text("去授权") }
+        }
+
+        Text(summary, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+
+        if (crashFiles.isNotEmpty()) {
+            Spacer(Modifier.size(10.dp))
+            Text("微信进程崩溃文件（${crashFiles.size}）", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            crashFiles.forEach { file ->
+                Text(
+                    "· ${file.name}（${file.length() / 1024} KB）",
+                    fontSize = 12.sp,
+                    modifier = Modifier.fillMaxWidth().clickable {
+                        viewText = runCatching { file.readText() }.getOrDefault("（读取失败）")
+                        showView = true
+                    }.padding(vertical = 4.dp),
+                )
+            }
+        }
+
+        Spacer(Modifier.size(12.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("最近日志", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.weight(1f))
+            TextButton(onClick = { version++ }) { Text("刷新") }
+        }
+        Text(
+            runCatching { HostLogViewer.tail() }.getOrDefault("（读取失败）"),
+            fontSize = 11.sp,
+            fontFamily = FontFamily.Monospace,
+        )
+
+        if (showView) {
+            AlertDialog(
+                onDismissRequest = { showView = false },
+                title = { Text("崩溃文件") },
+                text = { Text(viewText, fontSize = 11.sp, fontFamily = FontFamily.Monospace) },
+                confirmButton = { TextButton(onClick = { showView = false }) { Text("关闭") } },
+            )
+        }
     }
 }
 

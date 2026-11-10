@@ -70,12 +70,35 @@ object WeLogger {
 
     // ========== File Logging Internals ==========
 
+    /** 能建目录不等于能写文件（scoped storage 下常见），这里真写一次探测。 */
+    private fun loggerDirWritable(dir: java.nio.file.Path?): Boolean = runCatching {
+        if (dir == null) return false
+        val probe = dir.resolve(".probe")
+        Files.write(probe, byteArrayOf(1), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)
+        Files.deleteIfExists(probe)
+        true
+    }.getOrDefault(false)
+
+    /** 兜底日志目录：宿主自己的 external files（微信进程必定可写）。 */
+    private fun fallbackLogsDir(): java.nio.file.Path? = runCatching {
+        val base = HostInfo.application.getExternalFilesDir(null)?.toPath() ?: return@runCatching null
+        (base / BuildConfig.TAG / "logs").createDirsSafe()
+    }.getOrNull()
+
     private fun getOrRotateWriter(logDate: LocalDate): BufferedWriter? {
         if (writer != null && currentLogDate == logDate) return writer
 
         closeWriter()
         val logsDir = runCatching {
-            (KnownPaths.moduleData / "logs").createDirsSafe()
+            val primary = (KnownPaths.moduleData / "logs").createDirsSafe()
+            val dir = if (loggerDirWritable(primary)) primary else (fallbackLogsDir() ?: primary)
+            runCatching {
+                com.johnny.wxscript.preferences.WePrefs.putString(
+                    com.johnny.wxscript.constants.Preferences.HOST_LOG_DIR,
+                    dir.toString(),
+                )
+            }
+            dir
         }.getOrNull() ?: return null
 
         pruneLogs(logsDir)

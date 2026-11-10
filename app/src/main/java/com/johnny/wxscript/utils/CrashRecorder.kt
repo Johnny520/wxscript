@@ -1,5 +1,6 @@
 package com.johnny.wxscript.utils
 
+import com.johnny.wxscript.BuildConfig
 import com.johnny.wxscript.utils.fs.KnownPaths
 import java.io.File
 import java.io.PrintWriter
@@ -33,10 +34,37 @@ object CrashRecorder {
     }
 
     fun crashDir(): File? = runCatching {
-        val dir = File(KnownPaths.moduleData.toFile(), "crash")
-        if (!dir.isDirectory && !dir.mkdirs()) return null
+        val primary = File(KnownPaths.moduleData.toFile(), "crash")
+        val ok = (primary.isDirectory || primary.mkdirs()) && probeWritable(primary)
+        val dir = if (ok) primary else fallbackCrashDir() ?: return null
+        runCatching {
+            com.johnny.wxscript.preferences.WePrefs.putString(
+                com.johnny.wxscript.constants.Preferences.HOST_CRASH_DIR,
+                dir.absolutePath,
+            )
+        }
         dir
     }.getOrNull()
+
+    /**
+     * 兜底崩溃目录：宿主自己的 external files（微信进程必定可写）。
+     *
+     * 直拼 `/sdcard/Android/data/<pkg>/WxScript` 在部分 ROM / 高 targetSdk 上会被 scoped storage
+     * 拒绝写入，导致「崩溃了但一条日志都没有」；这里保证至少有一份写得出来。
+     */
+    private fun fallbackCrashDir(): File? = runCatching {
+        val base = HostInfo.application.getExternalFilesDir(null) ?: return@runCatching null
+        File(base, BuildConfig.TAG + "/crash").apply { if (!isDirectory) mkdirs() }
+            .takeIf { it.isDirectory }
+    }.getOrNull()
+
+    /** 能建目录不代表能写文件，真写一次探测。 */
+    private fun probeWritable(dir: File): Boolean = runCatching {
+        val probe = File(dir, ".probe")
+        probe.writeText("1")
+        probe.delete()
+        true
+    }.getOrDefault(false)
 
     fun list(): List<File> = runCatching {
         crashDir()?.listFiles()

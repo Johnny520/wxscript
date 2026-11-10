@@ -48,7 +48,7 @@ object WeSettingsRowInjector {
         private set
 
     private fun enabled(): Boolean =
-        runCatching { Preferences.floatingEntryEnabled }.getOrDefault(true)
+        runCatching { Preferences.settingsEntryEnabled }.getOrDefault(true)
 
     fun install(classLoader: ClassLoader) {
         if (installed) return
@@ -152,15 +152,6 @@ object WeSettingsRowInjector {
     }
 
     private fun openSettings(activity: Activity) {
-        if (SettingsDialogHost.show(activity)) {
-            WeLogger.i(TAG, "open settings via dialog host")
-            return
-        }
-        runCatching {
-            activity.startActivity(Intent(activity, SettingsActivity::class.java))
-        }.onFailure {
-            WeLogger.e(TAG, "open settings failed: ${it.message}", it)
-            runCatching { activity.startActivity(Intent().setClassName(activity, SETTINGS_CLASS)) }
-        }
+        com.johnny.wxscript.ui.ScriptUiLauncher.open(activity, "settings-row")
     }
 }

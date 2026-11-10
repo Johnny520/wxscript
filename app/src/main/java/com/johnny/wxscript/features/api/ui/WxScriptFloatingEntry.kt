@@ -212,48 +212,8 @@ object WxScriptFloatingEntry {
         }.onFailure { WeLogger.e(TAG, "show diagnostics failed", it) }
     }
 
-    /** 优先用全屏 Dialog（不依赖 Activity 启动链路），失败再走三级 startActivity 兜底。 */
+    /** 统一走 [ScriptUiLauncher]（真 Activity 优先，Dialog 兜底）。 */
     private fun openSettings(activity: Activity) {
-        if (SettingsDialogHost.show(activity)) {
-            WeLogger.i(TAG, "open settings: dialog host")
-            return
-        }
-
-        var lastError: Throwable? = null
-
-        runCatching {
-            activity.startActivity(Intent(activity, SettingsActivity::class.java))
-            WeLogger.i(TAG, "open settings: direct module activity")
-            return
-        }.onFailure { lastError = it }
-
-        runCatching {
-            ActivityLauncher.launch(activity, SETTINGS_CLASS)
-            WeLogger.i(TAG, "open settings: ActivityLauncher proxy")
-            return
-        }.onFailure { lastError = it }
-
-        runCatching {
-            activity.startActivity(
-                Intent().setClassName(HostInfo.packageName, SETTINGS_CLASS)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            )
-            WeLogger.i(TAG, "open settings: host-package class name")
-            return
-        }.onFailure { lastError = it }
-
-        val reason = lastError
-        if (reason != null) {
-            WeLogger.e(TAG, "open settings failed (all fallbacks): " + (reason.message ?: reason.javaClass.simpleName), reason)
-        } else {
-            WeLogger.e(TAG, "open settings failed (all fallbacks): unknown")
-        }
-        runCatching {
-            Toast.makeText(
-                activity,
-                "打开脚本页失败：" + (lastError?.message ?: "未知原因"),
-                Toast.LENGTH_LONG,
-            ).show()
-        }
+        com.johnny.wxscript.ui.ScriptUiLauncher.open(activity, "floating-button")
     }
 }

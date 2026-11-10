@@ -13,7 +13,15 @@ object Preferences {
     /** 微信右上角「+」菜单里的「微信脚本」入口（默认开启，可在首页 → 快捷入口关闭）。 */
     const val PLUS_MENU_ENTRY = "plus_menu_entry_enabled"
 
-    /** 微信主界面悬浮入口「脚本」（默认开启；不依赖任何微信页面结构，最可靠的一条）。 */
+    /** 微信「我 → 设置」页里的「微信脚本」入口（主入口，默认开启）。 */
+    const val SETTINGS_ENTRY = "settings_entry_enabled"
+
+    /**
+     * 微信主界面悬浮入口「脚本」（**默认关闭**）。
+     *
+     * 悬浮球会挡在聊天列表右侧，多数用户更希望只有「微信 → 我 → 设置 → 微信脚本」这一条原生入口；
+     * 需要时可在模块 App「首页 → 快捷入口」重新打开。
+     */
     const val FLOATING_ENTRY = "floating_entry_enabled"
     const val FLOATING_ENTRY_Y = "floating_entry_y_percent"
 
@@ -36,6 +44,10 @@ object Preferences {
     const val CACHED_LSP_ENVIRONMENT = "cached_lsp_environment"
     const val CACHED_LSP_API_VERSION = "cached_lsp_api_version"
 
+    /** 微信进程实际使用的日志目录（写日志时探测后回填，模块 App 读它来展示）。 */
+    const val HOST_LOG_DIR = "host_log_dir"
+    const val HOST_CRASH_DIR = "host_crash_dir"
+
     var verboseLog by prefOption(VERBOSE_LOG, false)
     var noDexResolve by prefOption(NO_DEX_RESOLVE, false)
     var showStartupToast by prefOption(SHOW_STARTUP_TOAST, false)
@@ -47,8 +59,11 @@ object Preferences {
     // 「+」菜单入口（默认开启）
     var plusMenuEntryEnabled by prefOption(PLUS_MENU_ENTRY, true)
 
-    // 微信主界面悬浮入口（默认开启）
-    var floatingEntryEnabled by prefOption(FLOATING_ENTRY, true)
+    // 微信设置页里的「微信脚本」入口（主入口，默认开启）
+    var settingsEntryEnabled by prefOption(SETTINGS_ENTRY, true)
+
+    // 微信主界面悬浮入口（默认关闭：入口统一走微信设置页）
+    var floatingEntryEnabled by prefOption(FLOATING_ENTRY, false)
 
     /** 悬浮按钮纵向位置（0~100 百分比），拖动后记忆。 */
     var floatingEntryYPercent by prefOption(FLOATING_ENTRY_Y, 55)
@@ -58,9 +73,4 @@ object Preferences {
 
     // 「密友功能」分类总开关（默认开启）
     var hiddenContactsMasterEnabled by prefOption(HIDDEN_CONTACTS_MASTER_ENABLED, true)
-
-    // use this when Google fucked up itself again
-//    var useActivityInsteadOfDialog: Boolean
-//        get() = false
-//        set(value) { WePrefs.putBool(USE_ACTIVITY_INSTEAD_OF_DIALOG, value) }
 }
