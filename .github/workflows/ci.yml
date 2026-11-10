@@ -41,37 +41,43 @@ jobs:
       - name: Verify release signature
         run: |
           set -e
-          APK=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
-          echo "checking $APK"
           BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
-          "$BT/apksigner" verify --print-certs "$APK" | head -20
+          for APK in $(find app/build/outputs/apk -name '*.apk' | sort); do
+            echo "checking $APK"
+            "$BT/apksigner" verify --print-certs "$APK" | head -6
+          done
 
       - name: Collect APKs
         run: |
           mkdir -p out
-          find app/build/outputs/apk/release -name '*.apk' -exec cp {} out/ \;
+          find app/build/outputs/apk -name '*.apk' -exec cp {} out/ \;
           ls -la out
 
-      # 打包自检：libxposed 入口是否真的进了 APK（缺 META-INF/xposed 文件或入口类被 R8 删掉，
-      # 都会表现为「模块在微信里完全不加载、任何入口都没有」，人工很难发现）。
-      - name: Inspect APK for libxposed entry
+      # 打包自检：两种 flavor 的入口元数据与实际入口类是否都进了 APK。
+      # 缺任何一个都会表现为「模块在微信里完全不加载、任何入口都没有」，人工很难发现。
+      - name: Inspect APK entries
         run: |
-          APK=$(ls out/*.apk | head -1)
-          echo "== APK: $APK"
-          echo "-- META-INF/xposed --"
-          unzip -l "$APK" | grep -i "xposed" || echo "MISSING: no META-INF/xposed entry"
-          echo "-- java_init.list --"
-          unzip -p "$APK" META-INF/xposed/java_init.list || echo "MISSING java_init.list"
-          echo "-- module.prop --"
-          unzip -p "$APK" META-INF/xposed/module.prop || echo "MISSING module.prop"
-          echo "-- entry class in dex --"
-          python3 - "$APK" <<'PY'
-          import sys, zipfile
-          apk = sys.argv[1]
-          needle = b"com/johnny/wxscript/entry/LibXposedEntry"
-          z = zipfile.ZipFile(apk)
-          hits = [n for n in z.namelist() if n.startswith("classes") and n.endswith(".dex") and needle in z.read(n)]
-          print("FOUND in:", hits if hits else "MISSING entry class")
+          set -e
+          python3 - <<'PY'
+          import glob, zipfile
+          for apk in sorted(glob.glob("out/*.apk")):
+              z = zipfile.ZipFile(apk)
+              names = set(z.namelist())
+              flavor = "standard" if "standard" in apk else ("legacy" if "legacy" in apk else "?")
+              print("==", apk, "flavor=", flavor)
+              dex = b"".join(z.read(n) for n in names if n.startswith("classes") and n.endswith(".dex"))
+              if flavor == "legacy":
+                  entry = z.read("assets/xposed_init").decode().strip() if "assets/xposed_init" in names else ""
+                  print("  assets/xposed_init:", entry or "MISSING")
+                  needle = entry.splitlines()[0].replace(".", "/").encode() if entry else b""
+                  print("  legacy entry class in dex:", bool(needle) and needle in dex)
+                  print("  META-INF/xposed present:", any(n.startswith("META-INF/xposed") for n in names), "(应为 False)")
+              else:
+                  for n in ("META-INF/xposed/java_init.list", "META-INF/xposed/module.prop", "META-INF/xposed/scope.list"):
+                      print(" ", n, ":", z.read(n).decode().strip().replace("\n", " | ") if n in names else "MISSING")
+                  needle = b"com/johnny/wxscript/entry/LibXposedEntry"
+                  print("  modern entry class in dex:", needle in dex)
+              print("  assets/xposed_init present:", "assets/xposed_init" in names)
           PY
 
       - name: Upload APKs

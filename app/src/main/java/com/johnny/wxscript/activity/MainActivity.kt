@@ -39,6 +39,8 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Update
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -73,6 +75,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import com.johnny.wxscript.ui.HostLogViewer
+import com.johnny.wxscript.utils.InjectSelfCheck
 
 /**
  * 模块主界面（运行在 WxScript 自己的进程里）。
@@ -244,6 +247,37 @@ private fun HomeScreen() {
         GroupTitle("快捷操作")
 
         SectionCard {
+            ActionRow(
+                icon = Icons.Filled.RestartAlt,
+                title = "快速启动",
+                subtitle = "强停微信并重新打开（需要 Root），让框架重新注入模块",
+                onClick = {
+                    val result = HostLauncher.forceRestart(context)
+                    Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+                },
+            )
+            Divider()
+            ActionRow(
+                icon = Icons.Filled.BugReport,
+                title = "注入自检",
+                subtitle = "检查 flavor / 框架 API / APK 入口元数据 / 注入心跳",
+                onClick = {
+                    val text = InjectSelfCheck.run(context)
+                    android.app.AlertDialog.Builder(context)
+                        .setTitle("注入自检")
+                        .setMessage(text)
+                        .setPositiveButton("关闭", null)
+                        .setNeutralButton("复制") { _, _ ->
+                            runCatching {
+                                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                cm.setPrimaryClip(ClipData.newPlainText("wxscript-selfcheck", text))
+                                Toast.makeText(context, "已复制", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                        .show()
+                },
+            )
+            Divider()
             ActionRow(
                 icon = Icons.Filled.PlayArrow,
                 title = "跳转至宿主",

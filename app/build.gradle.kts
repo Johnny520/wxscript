@@ -19,12 +19,27 @@ android {
         applicationId = "com.johnny.wxscript"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 22
-        versionName = "v1.10.1"
+        versionCode = 23
+        versionName = "v1.11.0"
 
         buildConfigField("String", "TAG", "\"WxScript\"")
         buildConfigField("String", "HOST_PACKAGE", "\"com.tencent.mm\"")
-        buildConfigField("String", "FLAVOR_SLUG", "\"standard\"")
+    }
+
+    // ─── 双 flavor：覆盖两代 Xposed API ────────────────────────────────
+    // modern（libxposed 101/102）：只有 LSPosed 2.0+ / Vector 2.1+ 支持；
+    // legacy（de.robv 82）：LSPosed 1.x 全系列可用，兼容性与 WCX 相同。
+    // 两者包名相同、不能并存，用户按自己的框架版本装其中一个。
+    flavorDimensions += "xposed"
+    productFlavors {
+        create("standard") {
+            dimension = "xposed"
+            buildConfigField("String", "FLAVOR_SLUG", "\"standard\"")
+        }
+        create("legacy") {
+            dimension = "xposed"
+            buildConfigField("String", "FLAVOR_SLUG", "\"legacy\"")
+        }
     }
 
     buildFeatures {
@@ -116,6 +131,9 @@ dependencies {
     compileOnly(files("libs/xposed-api-82.jar"))
     // 保留 libxposed api：模块内的 102 兼容层仍需要编译期类型（运行时不使用）
     compileOnly("io.github.libxposed:api:102.0.0")
+    // legacy flavor 需要这些类能被加载（虽然不会被调用）：XposedRuntime/XposedBridge 里
+    // 引用了 libxposed 的类型，缺类会在 legacy 框架下直接 NoClassDefFoundError。
+    add("legacyImplementation", "io.github.libxposed:api:102.0.0")
     compileOnly(project(":libs:common:stubs"))
 
     implementation(project(":libs:common:bsh"))

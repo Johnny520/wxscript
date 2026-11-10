@@ -1,28 +1,17 @@
 package com.johnny.wxscript.entry
 
-import android.app.Application
-import android.app.Instrumentation
-import android.os.Handler
-import android.os.Looper
 import com.johnny.wxscript.BuildConfig
-import com.johnny.wxscript.startup.WxScriptStartup
-import com.johnny.wxscript.xposed.XC_MethodHook
-import com.johnny.wxscript.xposed.XposedBridge
 import com.johnny.wxscript.xposed.XposedRuntime
 import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface
-import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * WxScript 的 libxposed 入口（API 102）。
+ * WxScript 的 libxposed 入口（modern API，standard flavor 使用）。
  *
- * 102 起框架不再允许调用 legacy `de.robv.android.xposed`，所以入口继承 [XposedModule]；
- * 模块内部所有 hook 通过自带兼容层（[XposedBridge] / [XC_MethodHook]）转到 `XposedInterface.hook(...).intercept(...)`。
+ * 只负责「拿到宿主 ClassLoader 并交给 [EntryBootstrap]」，
+ * 真正的 Hook 全部走 [com.johnny.wxscript.xposed.XposedBridge] 兼容层，与 legacy flavor 共用一套代码。
  *
- * 两点关键：
- * 1. 入口（悬浮按钮）在 [onPackageLoaded] 里就开始挂，不依赖 Application 回调是否命中；
- * 2. Application 装配挂了两个钩子（newApplication / callApplicationOnCreate）+ [onPackageReady] 兜底，
- *    不同 ROM 走哪条不一定。
+ * legacy flavor 的入口见 `src/legacy/java/.../LegacyXposedEntry.kt`，它走 {@code assets/xposed_init}。
  */
 class LibXposedEntry : XposedModule() {
 
@@ -30,120 +19,54 @@ class LibXposedEntry : XposedModule() {
         private const val TAG = "WxScript"
     }
 
-    private val started = AtomicBoolean(false)
-
     /**
      * 模块被框架注入进程的**第一个**回调（先于 onPackageLoaded）。
      *
-     * 在这里落一个心跳文件，是判断「模块到底有没有被注入」的最可靠手段：
-     * 之后任何入口（悬浮按钮/设置页卡片）没出现，都可能是入口代码自己的问题；
-     * 但这个文件只要不存在，就说明框架根本没把模块装进微信进程。
+     * 在这里落心跳是判断「模块到底有没有被注入」的最可靠手段：
+     * 之后任何入口没出现，都可能是入口代码自己的问题；但这个文件只要不存在，
+     * 就说明框架根本没把模块装进微信进程。
      */
     override fun onModuleLoaded(param: XposedModuleInterface.ModuleLoadedParam) {
-        writeHeartbeat(
+        Heartbeat.write(
             "module_loaded",
-            "process=${param.processName} systemServer=${param.isSystemServer}",
+            "api=modern process=${param.processName} systemServer=${param.isSystemServer}",
         )
     }
 
     override fun onPackageLoaded(param: XposedModuleInterface.PackageLoadedParam) {
-        writeHeartbeat("package_loaded", "package=${param.packageName} first=${param.isFirstPackage}")
+        Heartbeat.write(
+            "package_loaded",
+            "api=modern package=${param.packageName} first=${param.isFirstPackage}",
+        )
         if (param.packageName != BuildConfig.HOST_PACKAGE) return
 
         try {
             XposedRuntime.attach(this, param.defaultClassLoader)
             XposedRuntime.log(4, "[$TAG] libxposed entry loaded: ${param.packageName}")
-
-            // 入口不依赖 Application 创建：这里就先挂上（LauncherUI.onResume 触发时再插入 View）。
-            val hostClassLoader = param.defaultClassLoader
-            Handler(Looper.getMainLooper()).postDelayed({
-                runCatching {
-                    com.johnny.wxscript.features.api.ui.WxScriptFloatingEntry.install(hostClassLoader)
-                    XposedRuntime.log(
-                        4,
-                        "[$TAG] floating entry: " +
-                            com.johnny.wxscript.features.api.ui.WxScriptFloatingEntry.status,
-                    )
-                }.onFailure { XposedRuntime.log(6, "[$TAG] floating entry failed: ${it.message}") }
-
-                runCatching {
-                    com.johnny.wxscript.features.api.ui.WeSettingsRowInjector.install(hostClassLoader)
-                    XposedRuntime.log(
-                        4,
-                        "[$TAG] settings row: " +
-                            com.johnny.wxscript.features.api.ui.WeSettingsRowInjector.status,
-                    )
-                }.onFailure { XposedRuntime.log(6, "[$TAG] settings row failed: ${it.message}") }
-            }, 2_000L)
-
-            XposedBridge.hookAllMethods(
-                Instrumentation::class.java,
-                "newApplication",
-                object : XC_MethodHook() {
-                    override fun afterHookedMethod(param: MethodHookParam) {
-                        val application = param.result as? Application ?: return
-                        ensureStartup(application)
-                    }
-                },
-            )
-            XposedBridge.hookAllMethods(
-                Instrumentation::class.java,
-                "callApplicationOnCreate",
-                object : XC_MethodHook() {
-                    override fun afterHookedMethod(param: MethodHookParam) {
-                        val application = param.args.getOrNull(0) as? Application ?: return
-                        ensureStartup(application)
-                    }
-                },
-            )
+            EntryBootstrap.bootstrap("modern", param.defaultClassLoader)
         } catch (t: Throwable) {
             XposedRuntime.log(6, "[$TAG] entry init failed: ${t.message}")
             XposedRuntime.log(6, android.util.Log.getStackTraceString(t))
+            Heartbeat.write("entry init", "failed: ${t.message}")
         }
     }
 
-    /** 包就绪回调（Application 创建前的最后时机），再补一次 hook 兜底。 */
+    /**
+     * 包就绪回调（Application 创建前的最后时机）。
+     *
+     * 部分 ROM 的包加载顺序会让 onPackageLoaded 早于 Instrumentation 实例可用，
+     * 这里再补一次装配（[EntryBootstrap] 内部不重复挂界面，只补 Instrumentation 与启动）。
+     */
     override fun onPackageReady(param: XposedModuleInterface.PackageReadyParam) {
         if (param.packageName != BuildConfig.HOST_PACKAGE) return
+        Heartbeat.write("package_ready", "api=modern package=${param.packageName}")
         runCatching {
-            XposedBridge.hookAllMethods(
-                Instrumentation::class.java,
-                "callApplicationOnCreate",
-                object : XC_MethodHook() {
-                    override fun afterHookedMethod(param: MethodHookParam) {
-                        val application = param.args.getOrNull(0) as? Application ?: return
-                        ensureStartup(application)
-                    }
-                },
-            )
-            XposedRuntime.log(4, "[$TAG] package ready hook installed: ${param.packageName}")
-        }.onFailure { XposedRuntime.log(6, "[$TAG] package ready hook failed: ${it.message}") }
-    }
-
-    /** 心跳文件：微信自己的外部数据目录（模块 App 用「所有文件访问」权限可读）。 */
-    private fun writeHeartbeat(stage: String, detail: String) {
-        runCatching {
-            val dir = java.io.File(
-                android.os.Environment.getExternalStorageDirectory(),
-                "Android/data/" + BuildConfig.HOST_PACKAGE + "/" + BuildConfig.TAG,
-            )
-            if (!dir.isDirectory) dir.mkdirs()
-            val stamp = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.CHINA)
-                .format(java.util.Date())
-            java.io.File(dir, "module_loaded.txt").appendText(
-                "[$stamp] $stage | $detail | v" + BuildConfig.VERSION_NAME + "\n",
-            )
-        }.onFailure {
-            XposedRuntime.log(6, "[$TAG] heartbeat failed: ${it.message}")
-        }
-    }
-
-    private fun ensureStartup(application: Application) {
-        if (!started.compareAndSet(false, true)) return
-        runCatching { WxScriptStartup.onApplicationCreated(application) }
-            .onFailure {
-                XposedRuntime.log(6, "[$TAG] startup failed: ${it.message}")
-                XposedRuntime.log(6, android.util.Log.getStackTraceString(it))
+            if (!XposedRuntime.frameworkReady) {
+                XposedRuntime.attach(this, param.defaultClassLoader)
             }
+            EntryBootstrap.bootstrap("modern-ready", param.classLoader, withEntries = false)
+        }.onFailure {
+            XposedRuntime.log(6, "[$TAG] package ready bootstrap failed: ${it.message}")
+        }
     }
 }

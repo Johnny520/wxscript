@@ -79,11 +79,16 @@ public final class XposedBridge {
             }
         };
 
+        LegacyHookBackend legacy = XposedRuntime.INSTANCE.legacy();
+        if (legacy != null) {
+            return legacy.hook(executable, ordered);
+        }
+
         XposedInterface.HookHandle handle = XposedRuntime.INSTANCE.require()
                 .hook(executable)
                 .setPriority(ordered[0].priority)
                 .intercept(hooker);
-        return ordered[0].new Unhook(handle, executable);
+        return new XC_MethodHook.Unhook(handle::unhook, executable);
     }
 
     public static Set<XC_MethodHook.Unhook> hookAllMethods(Class<?> clazz, String methodName, XC_MethodHook callback) {
@@ -119,6 +124,10 @@ public final class XposedBridge {
      */
     public static Object invokeOriginalMethod(Member member, Object thisObject, Object[] args) throws Throwable {
         Object[] actual = args == null ? new Object[0] : args;
+        LegacyHookBackend legacy = XposedRuntime.INSTANCE.legacy();
+        if (legacy != null) {
+            return legacy.invokeOriginal(member, thisObject, actual);
+        }
         if (member instanceof Method) {
             XposedInterface.Invoker<?, Method> invoker = XposedRuntime.INSTANCE.require()
                     .getInvoker((Method) member);

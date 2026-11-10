@@ -111,18 +111,18 @@ public abstract class XC_MethodHook {
     }
 
     /** 与 legacy 同名：持有 hook 句柄，调用 {@link #unhook()} 取消。 */
-    public class Unhook {
+    public static class Unhook {
         public final Member hookedMethod;
-        private final XposedInterface.HookHandle handle;
+        private final Runnable action;
 
-        public Unhook(XposedInterface.HookHandle handle, Member hookedMethod) {
-            this.handle = handle;
+        public Unhook(Runnable action, Member hookedMethod) {
+            this.action = action;
             this.hookedMethod = hookedMethod;
         }
 
         public void unhook() {
             try {
-                handle.unhook();
+                action.run();
             } catch (Throwable ignored) {
                 // 取消 hook 失败不影响调用方（legacy 同样忽略）
             }
