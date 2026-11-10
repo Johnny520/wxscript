@@ -32,7 +32,22 @@ class LibXposedEntry : XposedModule() {
 
     private val started = AtomicBoolean(false)
 
+    /**
+     * 模块被框架注入进程的**第一个**回调（先于 onPackageLoaded）。
+     *
+     * 在这里落一个心跳文件，是判断「模块到底有没有被注入」的最可靠手段：
+     * 之后任何入口（悬浮按钮/设置页卡片）没出现，都可能是入口代码自己的问题；
+     * 但这个文件只要不存在，就说明框架根本没把模块装进微信进程。
+     */
+    override fun onModuleLoaded(param: XposedModuleInterface.ModuleLoadedParam) {
+        writeHeartbeat(
+            "module_loaded",
+            "process=${param.processName} systemServer=${param.isSystemServer}",
+        )
+    }
+
     override fun onPackageLoaded(param: XposedModuleInterface.PackageLoadedParam) {
+        writeHeartbeat("package_loaded", "package=${param.packageName} first=${param.isFirstPackage}")
         if (param.packageName != BuildConfig.HOST_PACKAGE) return
 
         try {
@@ -103,6 +118,24 @@ class LibXposedEntry : XposedModule() {
             )
             XposedRuntime.log(4, "[$TAG] package ready hook installed: ${param.packageName}")
         }.onFailure { XposedRuntime.log(6, "[$TAG] package ready hook failed: ${it.message}") }
+    }
+
+    /** 心跳文件：微信自己的外部数据目录（模块 App 用「所有文件访问」权限可读）。 */
+    private fun writeHeartbeat(stage: String, detail: String) {
+        runCatching {
+            val dir = java.io.File(
+                android.os.Environment.getExternalStorageDirectory(),
+                "Android/data/" + BuildConfig.HOST_PACKAGE + "/" + BuildConfig.TAG,
+            )
+            if (!dir.isDirectory) dir.mkdirs()
+            val stamp = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.CHINA)
+                .format(java.util.Date())
+            java.io.File(dir, "module_loaded.txt").appendText(
+                "[$stamp] $stage | $detail | v" + BuildConfig.VERSION_NAME + "\n",
+            )
+        }.onFailure {
+            XposedRuntime.log(6, "[$TAG] heartbeat failed: ${it.message}")
+        }
     }
 
     private fun ensureStartup(application: Application) {

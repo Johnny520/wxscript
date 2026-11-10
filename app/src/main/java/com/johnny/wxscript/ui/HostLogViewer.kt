@@ -48,16 +48,37 @@ object HostLogViewer {
         }.onFailure { WeLogger.e(TAG, "request storage permission failed", it) }
     }
 
+    /** 注入心跳文件（模块被框架装进微信进程的第一时间写）。 */
+    private fun heartbeatFile(): File = File(logDir().parentFile, "module_loaded.txt")
+
     /** 日志概要：目录是否存在、文件数、最后修改时间、是否出现入口日志。 */
     fun summary(): String {
+        val hb = heartbeatFile()
+        val heartbeat = if (hb.isFile) {
+            runCatching { hb.readText() }.getOrDefault("")
+        } else ""
+        val injected = heartbeat.isNotBlank()
+        val header = buildString {
+            appendLine("【注入判定】" + if (injected) "✅ 模块已被注入微信进程" else "❌ 模块没有被注入微信进程")
+            if (injected) {
+                appendLine(heartbeat.trim().lines().takeLast(6).joinToString("\n"))
+            } else {
+                appendLine("（没有 module_loaded.txt 心跳文件）")
+                appendLine("→ 不是入口代码的问题，是框架没把模块装进微信进程。请逐项检查：")
+                appendLine("  1. LSPosed → 模块 → WxScript：开关是否打开")
+                appendLine("  2. 作用域是否勾选了你正在用的那个微信（分身是另一个条目）")
+                appendLine("  3. LSPosed 设置里的「Xposed API 调用保护」是否关闭")
+                appendLine("  4. 改完后一定要强停微信再重开")
+            }
+            appendLine()
+        }
+
         val dir = logDir()
         if (!dir.isDirectory) {
-            return buildString {
+            return header + buildString {
                 appendLine("日志目录不存在：")
                 appendLine(dir.absolutePath)
-                appendLine()
-                appendLine("这说明模块**从未在微信进程里跑起来**（不是入口代码问题）。")
-                appendLine("请确认：LSPosed 里模块已启用、作用域勾选了微信、并强停微信后重开。")
+                appendLine(if (injected) "（已注入但还没写日志，重启微信后再看）" else "")
             }
         }
         val files = dir.listFiles { f -> f.isFile && f.name.endsWith(".log") }
@@ -70,7 +91,7 @@ object HostLogViewer {
         val text = runCatching { latest.readText() }.getOrDefault("")
         val hasEntry = text.contains("entry loaded") || text.contains("libxposed entry")
         val hasStartup = text.contains("WxScript startup")
-        return buildString {
+        return header + buildString {
             appendLine("日志目录：${dir.absolutePath}")
             appendLine("文件数：${files.size}，最新：${latest.name}（${latest.length() / 1024} KB）")
             appendLine("最后写入：${java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.CHINA).format(latest.lastModified())}")
